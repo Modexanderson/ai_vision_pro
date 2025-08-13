@@ -1,0 +1,29 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "balanced-meal-app-65cb1",
+          "appId": "1:590295007216:android:19720b8e6e51e2ab99e735",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "balanced-meal-app-65cb1",
+          "configurations": {
+            "android": "1:590295007216:android:19720b8e6e51e2ab99e735",
+            "ios": "1:590295007216:ios:dda0846b3e5ce52c99e735"
+          }
+        }
+      }
+    }
+  },
+  "functions": {
+    "source": "functions"
+  },
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  }
+}
