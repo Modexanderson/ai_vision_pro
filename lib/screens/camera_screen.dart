@@ -16,6 +16,7 @@ import 'package:sensors_plus/sensors_plus.dart';
 import '../models/camera_state.dart';
 import '../providers/ads_provider.dart';
 import '../providers/camera_provider.dart';
+import '../providers/challenge_provider.dart';
 import '../providers/detection_provider.dart';
 import '../providers/premium_provider.dart';
 import '../providers/real_time_detection_provider.dart';
@@ -79,6 +80,8 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   // Capture feedback
   bool _showCaptureFlash = false;
 
+  Map<String, dynamic>? _challengeArgs;
+
   @override
   void initState() {
     super.initState();
@@ -91,7 +94,37 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     // Initialize camera after build is complete
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeCamera();
+      _checkChallengeArgs();
     });
+  }
+
+  void _checkChallengeArgs() {
+    final args =
+        ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+    if (args != null && args['challenge'] == true) {
+      _challengeArgs = args;
+      if (args['challengeType'] == 'plants') {
+        setState(() => _currentMode = CameraMode.plant);
+        _tts.speak("Challenge started: Scan 3 different plants");
+        _showChallengeSnackBar();
+      }
+    }
+  }
+
+  void _showChallengeSnackBar() {
+    final challengeState = ref.read(challengeProvider);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '${challengeState.description}\nProgress: ${challengeState.progress}/${challengeState.total}',
+        ),
+        duration: const Duration(seconds: 5),
+        action: SnackBarAction(
+          label: 'OK',
+          onPressed: () {},
+        ),
+      ),
+    );
   }
 
   void _initializeControllers() {
@@ -1303,6 +1336,43 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
             );
           } else {
             Navigator.pushNamed(context, '/result');
+          }
+        }
+      }
+
+      // In _performCapture (add to the try block after processing image)
+      final detectionResult = ref.read(detectionProvider).currentResult;
+      if (detectionResult != null && _challengeArgs != null) {
+        if (_currentMode == CameraMode.plant &&
+            detectionResult.objects.isNotEmpty) {
+          // Assume first object is the detected plant; adjust based on your model
+          if (detectionResult.objects.first.type?.toLowerCase() == 'plant') {
+            final notifier = ref.read(challengeProvider.notifier);
+            final newProgress = notifier.incrementProgress();
+
+            _tts.speak(
+                "Plant detected. Progress: $newProgress/${_challengeArgs!['challengeTarget']}");
+
+            if (newProgress >= _challengeArgs!['challengeTarget']) {
+              notifier.completeChallenge();
+              _tts.speak(
+                  "Challenge completed! You've earned ${_challengeArgs!['reward']}");
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                    content: Text(
+                        'Challenge Completed! Reward: ${_challengeArgs!['reward']}')),
+              );
+              // Optionally pop back to HomeScreen
+              Navigator.pop(context);
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                    content: Text(
+                        'Progress: $newProgress/${_challengeArgs!['challengeTarget']}')),
+              );
+            }
+          } else {
+            _tts.speak("No plant detected. Try again.");
           }
         }
       }

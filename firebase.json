@@ -19,9 +19,22 @@
       }
     }
   },
-  "functions": {
-    "source": "functions"
-  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "runtime": "python312",
+      "entryPoint": "main",
+      "ignore": [
+        "env/*",
+        "venv/*",
+        "__pycache__/*",
+        "*.pyc",
+        ".env",
+        ".gitignore"
+      ]
+    }
+  ],
   "firestore": {
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"

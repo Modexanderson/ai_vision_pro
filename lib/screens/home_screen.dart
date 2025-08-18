@@ -13,6 +13,7 @@ import 'package:image_picker/image_picker.dart';
 import '../models/achievement.dart';
 import '../models/feature_highlight.dart';
 import '../providers/auth_provider.dart';
+import '../providers/challenge_provider.dart';
 import '../providers/history_provider.dart';
 import '../providers/analytics_provider.dart';
 import '../providers/premium_provider.dart';
@@ -931,22 +932,39 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
+  // In HomeScreen's _buildDailyChallenge
   Widget _buildDailyChallenge(ThemeData theme) {
     return SliverToBoxAdapter(
-      child: Container(
-        margin: const EdgeInsets.fromLTRB(20, 32, 20, 0),
-        child: DailyChallenge(
-          title: "Today's Challenge",
-          description: 'Find and scan 3 different types of plants',
-          progress: 1,
-          total: 3,
-          reward: '50 XP + Plant Expert Badge',
-          onTap: () {
-            HapticFeedback.lightImpact();
-            _startChallenge();
-          },
-        ),
-      ).animate(delay: 1000.ms).slideY(begin: 0.3).fadeIn(),
+      child: Consumer(
+        builder: (context, ref, child) {
+          final challengeState = ref.watch(challengeProvider);
+
+          // Optional: Daily reset logic (e.g., if date changed)
+          // You can add a 'lastUpdated' field in Firestore and check here
+
+          return Container(
+            margin: const EdgeInsets.fromLTRB(20, 32, 20, 0),
+            child: DailyChallenge(
+              title: challengeState.title,
+              description: challengeState.description,
+              progress: challengeState.progress,
+              total: challengeState.total,
+              reward: challengeState.reward,
+              onTap: () {
+                HapticFeedback.lightImpact();
+                if (!challengeState.isCompleted) {
+                  _startChallenge();
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                        content: Text('Challenge already completed today!')),
+                  );
+                }
+              },
+            ),
+          ).animate(delay: 1000.ms).slideY(begin: 0.3).fadeIn();
+        },
+      ),
     );
   }
 

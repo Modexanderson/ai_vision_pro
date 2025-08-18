@@ -1,14 +1,13 @@
-// providers/premium_provider.dart - ENHANCED VERSION
-
+import 'dart:convert';
 import 'dart:io';
-
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'dart:async';
-
+import 'package:http/http.dart' as http;
+import '../constants/ad_unit_ids.dart';
 import '../models/premium_plan.dart';
 import '../models/premium_state.dart';
 import '../services/subscription_service.dart';
@@ -22,6 +21,10 @@ class PremiumNotifier extends StateNotifier<PremiumState> {
   final SubscriptionService _subscriptionService = SubscriptionService();
   late StreamSubscription<List<PurchaseDetails>> _subscription;
   Timer? _validationTimer;
+
+  // Firebase Functions base URL (non-const to allow dotenv access)
+  static String get _functionsBaseUrl =>
+      'https://us-central1-${dotenv.env['FIREBASE_PROJECT_ID'] ?? 'aivisionpro'}.cloudfunctions.net';
 
   Future<void> _initialize() async {
     state = state.copyWith(isLoading: true);
@@ -98,12 +101,7 @@ class PremiumNotifier extends StateNotifier<PremiumState> {
 
   Future<void> _loadProducts() async {
     try {
-      final Set<String> productIds = {
-        SubscriptionService.monthlyProductId,
-        SubscriptionService.yearlyProductId,
-        SubscriptionService.lifetimeProductId,
-      };
-
+      final productIds = AdUnitIds.allProductIds;
       final ProductDetailsResponse response =
           await _inAppPurchase.queryProductDetails(productIds);
 
@@ -170,13 +168,8 @@ class PremiumNotifier extends StateNotifier<PremiumState> {
           planType = 'Yearly';
           expiryDate = DateTime.now().add(const Duration(days: 365));
           break;
-        case SubscriptionService.lifetimeProductId:
-          planType = 'Lifetime';
-          expiryDate = null; // Lifetime never expires
-          break;
         default:
-          planType = 'Unknown';
-          expiryDate = DateTime.now().add(const Duration(days: 30));
+          throw Exception('Invalid product ID: ${purchaseDetails.productID}');
       }
 
       // Verify purchase with server
@@ -215,27 +208,28 @@ class PremiumNotifier extends StateNotifier<PremiumState> {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) throw Exception('User not authenticated');
 
-      final callable = FirebaseFunctions.instance.httpsCallable(
-        'process_subscription',
-        options: HttpsCallableOptions(
-          timeout: const Duration(seconds: 30),
-        ),
+      final response = await http.post(
+        Uri.parse('$_functionsBaseUrl/process_subscription'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'userId': user.uid,
+          'platform': Platform.isIOS ? 'ios' : 'android',
+          'productId': purchase.productID,
+          'purchaseData': {
+            'transactionId': purchase.purchaseID,
+            'purchaseToken': purchase.verificationData.localVerificationData,
+            'receipt': Platform.isIOS
+                ? purchase.verificationData.serverVerificationData
+                : null,
+          },
+        }),
       );
 
-      final response = await callable.call({
-        'userId': user.uid,
-        'platform': Platform.isIOS ? 'ios' : 'android',
-        'productId': purchase.productID,
-        'purchaseData': {
-          'transactionId': purchase.purchaseID,
-          'purchaseToken': purchase.verificationData.localVerificationData,
-          'receipt': Platform.isIOS
-              ? purchase.verificationData.serverVerificationData
-              : null,
-        },
-      });
+      if (response.statusCode != 200 || !jsonDecode(response.body)['success']) {
+        throw Exception('Server failed to verify purchase');
+      }
 
-      debugPrint('Purchase verification successful: ${response.data}');
+      debugPrint('Purchase verification successful: ${response.body}');
     } catch (e) {
       debugPrint('Purchase verification failed: $e');
       throw Exception('Failed to verify purchase: $e');
@@ -246,7 +240,7 @@ class PremiumNotifier extends StateNotifier<PremiumState> {
     // Validate subscription every hour
     _validationTimer = Timer.periodic(const Duration(hours: 1), (timer) async {
       if (state.isPremium) {
-        final isValid = await _subscriptionService.validateSubscription();
+        final isValid = await _subscriptionService.hasActiveSubscription();
         if (!isValid && mounted) {
           // Subscription is no longer valid
           state = state.copyWith(
@@ -286,18 +280,9 @@ class PremiumNotifier extends StateNotifier<PremiumState> {
         productDetails: productDetails,
       );
 
-      bool success;
-
-      // Use different purchase methods based on product type
-      if (productId == SubscriptionService.lifetimeProductId) {
-        success = await _inAppPurchase.buyNonConsumable(
-          purchaseParam: purchaseParam,
-        );
-      } else {
-        success = await _inAppPurchase.buyNonConsumable(
-          purchaseParam: purchaseParam,
-        );
-      }
+      final bool success = await _inAppPurchase.buyNonConsumable(
+        purchaseParam: purchaseParam,
+      );
 
       if (!success) {
         state = state.copyWith(
@@ -315,10 +300,6 @@ class PremiumNotifier extends StateNotifier<PremiumState> {
       );
       return false;
     }
-  }
-
-  Future<bool> purchaseLifetime() async {
-    return await purchaseSubscription(SubscriptionService.lifetimeProductId);
   }
 
   Future<void> restorePurchases() async {
@@ -413,22 +394,6 @@ class PremiumNotifier extends StateNotifier<PremiumState> {
               'Export features',
               'API access',
               '33% savings',
-            ],
-          ));
-          break;
-        case SubscriptionService.lifetimeProductId:
-          plans.add(PremiumPlan(
-            id: product.id,
-            title: 'Lifetime',
-            description: 'Pay once, use forever',
-            price: _parsePrice(product.price),
-            period: 'one-time',
-            features: [
-              'All premium features',
-              'Future updates included',
-              'Lifetime support',
-              'Best long-term value',
-              'No recurring payments',
             ],
           ));
           break;

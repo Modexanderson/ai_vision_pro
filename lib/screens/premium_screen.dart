@@ -15,6 +15,7 @@ import '../providers/analytics_provider.dart';
 import '../providers/history_provider.dart';
 import '../providers/favorites_provider.dart';
 import '../config/app_theme.dart';
+import '../services/subscription_service.dart';
 import '../widgets/billing_management_sheet.dart';
 
 class PremiumScreen extends ConsumerStatefulWidget {
@@ -36,9 +37,6 @@ class _PremiumScreenState extends ConsumerState<PremiumScreen>
 
   static final String yearlyProductId =
       Platform.isIOS ? 'ai_vision_pro_yearly' : 'yearly_premium';
-
-  static final String lifetimeProductId =
-      Platform.isIOS ? 'ai_vision_pro_lifetime' : 'lifetime_premium';
 
   final List<PremiumFeature> _features = [
     PremiumFeature(
@@ -497,11 +495,6 @@ class _PremiumScreenState extends ConsumerState<PremiumScreen>
                 ),
               ],
             ),
-
-            const SizedBox(height: 20),
-
-            // Lifetime option
-            _buildLifetimePricingCard(premiumState, theme),
           ],
         ),
       ),
@@ -589,6 +582,15 @@ class _PremiumScreenState extends ConsumerState<PremiumScreen>
                     ),
                   ],
                 ),
+                const SizedBox(height: 8),
+                Text(
+                  title == 'Yearly'
+                      ? 'All Monthly features + early access to new AI models'
+                      : 'Real-time detection, analytics, API access, ad-free',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
                 if (isPopular) ...[
                   const SizedBox(height: 8),
                   Container(
@@ -640,7 +642,7 @@ class _PremiumScreenState extends ConsumerState<PremiumScreen>
                             ),
                           )
                         : Text(
-                            'Subscribe',
+                            'Get $title',
                             style: theme.textTheme.labelLarge?.copyWith(
                               fontWeight: FontWeight.bold,
                             ),
@@ -653,146 +655,6 @@ class _PremiumScreenState extends ConsumerState<PremiumScreen>
         ],
       ),
     ).animate(delay: (isPopular ? 200 : 100).ms).slideY(begin: 0.3).fadeIn();
-  }
-
-  Widget _buildLifetimePricingCard(PremiumState premiumState, ThemeData theme) {
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            theme.colorScheme.primary,
-            theme.colorScheme.secondary,
-            theme.colorScheme.tertiary,
-          ],
-        ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: AppTheme.getElevationShadow(context, 8),
-      ),
-      child: Stack(
-        children: [
-          // Shimmer effect
-          AnimatedBuilder(
-            animation: _shimmerController,
-            builder: (context, child) {
-              return Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(20),
-                  gradient: LinearGradient(
-                    begin: Alignment(-1.0 + _shimmerController.value * 2, -1.0),
-                    end: Alignment(1.0 + _shimmerController.value * 2, 1.0),
-                    colors: [
-                      Colors.transparent,
-                      Colors.white.withOpacity(0.1),
-                      Colors.transparent,
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-
-          Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.diamond_rounded,
-                      color: Colors.white,
-                      size: 28,
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      'Lifetime Access',
-                      style: theme.textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const Spacer(),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppTheme.premiumGold,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        'BEST VALUE',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Pay once, use forever',
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    color: Colors.white.withOpacity(0.9),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      '\$199.99',
-                      style: theme.textTheme.displaySmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      'was \$299.99',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: Colors.white.withOpacity(0.7),
-                        decoration: TextDecoration.lineThrough,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: ElevatedButton(
-                    onPressed: premiumState.isLoading
-                        ? null
-                        : () => _purchaseLifetime(),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: theme.colorScheme.primary,
-                      elevation: 0,
-                      shadowColor: Colors.transparent,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                    child: Text(
-                      'Get Lifetime Access',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    ).animate(delay: 400.ms).scale();
   }
 
   Widget _buildFeaturesGrid(ThemeData theme) {
@@ -1430,6 +1292,45 @@ class _PremiumScreenState extends ConsumerState<PremiumScreen>
                 ),
               ),
             ],
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: OutlinedButton(
+                onPressed: () async {
+                  HapticFeedback.lightImpact();
+                  final subscriptions =
+                      await SubscriptionService().restorePurchases();
+                  if (subscriptions.isNotEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: const Text('Purchases restored successfully'),
+                        backgroundColor: AppTheme.successColor,
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        margin: const EdgeInsets.all(16),
+                      ),
+                    );
+                  } else {
+                    _showErrorSnackBar(
+                        'No active subscriptions found to restore');
+                  }
+                },
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: const BorderSide(color: Colors.white),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text(
+                  'Restore Purchases',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
           ],
         ),
       ).animate().scale(delay: 200.ms),
@@ -1925,19 +1826,6 @@ class _PremiumScreenState extends ConsumerState<PremiumScreen>
     }
   }
 
-  Future<void> _purchaseLifetime() async {
-    try {
-      HapticFeedback.lightImpact();
-      final success =
-          await ref.read(premiumProvider.notifier).purchaseLifetime();
-      if (!success) {
-        _showErrorSnackBar('Failed to initiate purchase. Please try again.');
-      }
-    } catch (e) {
-      _showErrorSnackBar('Purchase failed: $e');
-    }
-  }
-
   void _showSuccessDialog(String planType) {
     showDialog(
       context: context,
@@ -2203,11 +2091,17 @@ class _PremiumScreenState extends ConsumerState<PremiumScreen>
               borderRadius: BorderRadius.circular(8),
             ),
             child: ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 HapticFeedback.lightImpact();
                 Navigator.pop(context);
-                // Show pricing plans for renewal
-                setState(() {});
+                final subscription =
+                    await SubscriptionService().getSubscriptionDetails();
+                if (subscription != null) {
+                  final productId = subscription.productId.contains('yearly')
+                      ? yearlyProductId
+                      : monthlyProductId;
+                  await _purchaseSubscription(productId);
+                }
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.transparent,

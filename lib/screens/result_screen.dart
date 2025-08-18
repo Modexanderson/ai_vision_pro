@@ -1,10 +1,17 @@
 // screens/result_screen.dart
 
+import 'dart:io';
 import 'dart:ui' as ui;
+import 'package:csv/csv.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:image/image.dart' as img;
+import 'package:open_file/open_file.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -3746,24 +3753,157 @@ class _ResultScreenState extends ConsumerState<ResultScreen>
     );
   }
 
-  void _exportAsPDF() {
+  void _exportAsPDF() async {
     Navigator.pop(context);
+
+    final result = ref.read(detectionProvider).currentResult;
+    if (result == null) {
+      _showErrorSnackBar('No detection result available');
+      return;
+    }
+
+    final pdf = pw.Document();
+    pdf.addPage(pw.Page(
+      pageFormat: PdfPageFormat.a4,
+      build: (pw.Context context) {
+        return pw.Column(
+          children: [
+            pw.Text('Detection Results', style: pw.TextStyle(fontSize: 24)),
+            pw.SizedBox(height: 20),
+            pw.Image(pw.MemoryImage(result.imageFile.readAsBytesSync())),
+            pw.SizedBox(height: 20),
+            pw.Table.fromTextArray(data: <List<String>>[
+              <String>['Label', 'Confidence'],
+              ...result.objects.map((obj) =>
+                  [obj.label, '${(obj.confidence * 100).toStringAsFixed(2)}%'])
+            ]),
+          ],
+        );
+      },
+    ));
+
+    final dir = await getTemporaryDirectory();
+    final file = File('${dir.path}/detection_results.pdf');
+    await file.writeAsBytes(await pdf.save());
+
+    OpenFile.open(file.path);
     _showExportProgress('PDF');
   }
 
-  void _exportAsCSV() {
+  void _exportAsCSV() async {
     Navigator.pop(context);
+
+    final result = ref.read(detectionProvider).currentResult;
+    if (result == null) {
+      _showErrorSnackBar('No detection result available');
+      return;
+    }
+
+    List<List<dynamic>> rows = [
+      ['Label', 'Confidence', 'Description'],
+      ...result.objects.map((obj) => [
+            obj.label,
+            obj.confidence,
+            obj.description ?? '',
+          ]),
+    ];
+
+    String csv = const ListToCsvConverter().convert(rows);
+
+    final dir = await getTemporaryDirectory();
+    final file = File('${dir.path}/detection_results.csv');
+    await file.writeAsString(csv);
+
+    OpenFile.open(file.path);
     _showExportProgress('CSV');
   }
 
-  void _exportAsJSON() {
+  void _exportAsJSON() async {
     Navigator.pop(context);
+
+    final result = ref.read(detectionProvider).currentResult;
+    if (result == null) {
+      _showErrorSnackBar('No detection result available');
+      return;
+    }
+
+    final json = result.toJson();
+
+    final dir = await getTemporaryDirectory();
+    final file = File('${dir.path}/detection_results.json');
+    await file.writeAsString(json.toString());
+
+    OpenFile.open(file.path);
     _showExportProgress('JSON');
   }
 
-  void _exportAnnotatedImage() {
+  void _exportAnnotatedImage() async {
     Navigator.pop(context);
-    _showExportProgress('annotated image');
+
+    final result = ref.read(detectionProvider).currentResult;
+    if (result == null) {
+      _showErrorSnackBar('No detection result available');
+      return;
+    }
+
+    final originalImage = img.decodeImage(result.imageFile.readAsBytesSync())!;
+    final annotatedImage =
+        img.copyResize(originalImage, width: originalImage.width);
+
+    for (var obj in result.objects) {
+      img.drawRect(
+        annotatedImage,
+        x1: obj.boundingBox.left.toInt(),
+        y1: obj.boundingBox.top.toInt(),
+        x2: obj.boundingBox.right.toInt(),
+        y2: obj.boundingBox.bottom.toInt(),
+        color: img.ColorRgb8(255, 0, 0),
+      );
+      img.drawString(
+        annotatedImage,
+        '${obj.label} ${(obj.confidence * 100).toInt()}%',
+        font: img.arial14,
+        x: obj.boundingBox.left.toInt(),
+        y: obj.boundingBox.top.toInt() - 20,
+        color: img.ColorRgb8(255, 0, 0),
+      );
+    }
+
+    final dir = await getTemporaryDirectory();
+    final file = File('${dir.path}/annotated_image.png');
+    await file.writeAsBytes(img.encodePng(annotatedImage));
+
+    OpenFile.open(file.path);
+    _showExportProgress('Image');
+  }
+
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(
+              Icons.error_outline_rounded,
+              color: Theme.of(context).colorScheme.onError,
+              size: 20,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(fontWeight: FontWeight.w500),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: AppTheme.errorColor,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
   }
 
   void _showExportProgress(String format) {

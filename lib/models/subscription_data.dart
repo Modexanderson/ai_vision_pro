@@ -1,6 +1,5 @@
 // models/subscription_data.dart
 
-// Data model for subscription
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../services/subscription_service.dart';
@@ -16,6 +15,7 @@ class SubscriptionData {
   final String? originalTransactionId;
   final String? verificationData;
   final DateTime? cancelledAt;
+  final DateTime? gracePeriodUntil;
 
   SubscriptionData({
     required this.userId,
@@ -28,6 +28,7 @@ class SubscriptionData {
     this.originalTransactionId,
     this.verificationData,
     this.cancelledAt,
+    this.gracePeriodUntil,
   });
 
   Map<String, dynamic> toMap() {
@@ -43,6 +44,8 @@ class SubscriptionData {
       'verificationData': verificationData,
       'cancelledAt':
           cancelledAt != null ? Timestamp.fromDate(cancelledAt!) : null,
+      'gracePeriodUntil':
+          gracePeriodUntil != null ? gracePeriodUntil!.toIso8601String() : null,
       'lastValidated': FieldValue.serverTimestamp(),
     };
   }
@@ -63,16 +66,19 @@ class SubscriptionData {
       cancelledAt: map['cancelledAt'] != null
           ? (map['cancelledAt'] as Timestamp).toDate()
           : null,
+      gracePeriodUntil: map['gracePeriodUntil'] != null
+          ? DateTime.parse(map['gracePeriodUntil'] as String)
+          : null,
     );
   }
 
   bool get isExpired {
-    if (expiryDate == null) return false; // Lifetime purchase
+    if (expiryDate == null) return false; // No expiry for valid subscriptions
     return DateTime.now().isAfter(expiryDate!);
   }
 
   int get daysUntilExpiry {
-    if (expiryDate == null) return -1; // Lifetime
+    if (expiryDate == null) return -1; // No expiry
     return expiryDate!.difference(DateTime.now()).inDays;
   }
 
@@ -82,8 +88,6 @@ class SubscriptionData {
         return 'Monthly';
       case SubscriptionService.yearlyProductId:
         return 'Yearly';
-      case SubscriptionService.lifetimeProductId:
-        return 'Lifetime';
       default:
         return 'Unknown';
     }

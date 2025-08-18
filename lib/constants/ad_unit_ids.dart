@@ -110,19 +110,9 @@ class AdUnitIds {
         (Platform.isIOS ? 'ai_vision_pro_yearly' : 'yearly_premium');
   }
 
-  static String get lifetimeProductId {
-    final envProductId = Platform.isIOS
-        ? dotenv.env['IAP_PREMIUM_LIFETIME_IOS']
-        : dotenv.env['IAP_PREMIUM_LIFETIME_ANDROID'];
-
-    return envProductId ??
-        (Platform.isIOS ? 'ai_vision_pro_lifetime' : 'lifetime_premium');
-  }
-
   static Set<String> get allProductIds => {
         monthlyProductId,
         yearlyProductId,
-        lifetimeProductId,
       };
 
   // ============================================================================
