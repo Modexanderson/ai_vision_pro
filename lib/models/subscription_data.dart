@@ -45,7 +45,7 @@ class SubscriptionData {
       'cancelledAt':
           cancelledAt != null ? Timestamp.fromDate(cancelledAt!) : null,
       'gracePeriodUntil':
-          gracePeriodUntil != null ? gracePeriodUntil!.toIso8601String() : null,
+          gracePeriodUntil?.toIso8601String(),
       'lastValidated': FieldValue.serverTimestamp(),
     };
   }

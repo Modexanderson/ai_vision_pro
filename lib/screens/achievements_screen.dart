@@ -10,7 +10,6 @@ import '../models/achievement.dart';
 import '../providers/analytics_provider.dart';
 import '../providers/premium_provider.dart';
 import '../config/app_theme.dart';
-import '../widgets/achievement_banner.dart';
 import '../widgets/ad_widgets.dart';
 
 class AchievementsScreen extends ConsumerStatefulWidget {

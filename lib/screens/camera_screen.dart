@@ -1954,7 +1954,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
                   onChanged(newValue);
                 }
               : (value) => _showPremiumRequired(),
-          activeColor: _getModeColor(),
+          activeThumbColor: _getModeColor(),
           activeTrackColor: _getModeColor().withOpacity(0.3),
         ),
         onTap: isEnabled

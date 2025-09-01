@@ -224,7 +224,7 @@ class _CameraSettingsSheetState extends ConsumerState<CameraSettingsSheet>
               Navigator.pop(context);
             },
             style: IconButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.surfaceVariant,
+              backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
               foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),

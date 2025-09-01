@@ -3768,7 +3768,7 @@ class _ResultScreenState extends ConsumerState<ResultScreen>
       build: (pw.Context context) {
         return pw.Column(
           children: [
-            pw.Text('Detection Results', style: pw.TextStyle(fontSize: 24)),
+            pw.Text('Detection Results', style: const pw.TextStyle(fontSize: 24)),
             pw.SizedBox(height: 20),
             pw.Image(pw.MemoryImage(result.imageFile.readAsBytesSync())),
             pw.SizedBox(height: 20),

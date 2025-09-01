@@ -2328,7 +2328,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               setState(() => value = newValue);
               onChanged(newValue);
             },
-            activeColor: Theme.of(context).colorScheme.primary,
+            activeThumbColor: Theme.of(context).colorScheme.primary,
           ),
         );
       },

@@ -204,24 +204,24 @@ class _PremiumScreenState extends ConsumerState<PremiumScreen>
       elevation: 0,
       backgroundColor: Colors.transparent,
       surfaceTintColor: Colors.transparent,
-      // leading: Container(
-      //   margin: const EdgeInsets.all(8),
-      //   decoration: BoxDecoration(
-      //     color: theme.colorScheme.surface.withOpacity(0.9),
-      //     borderRadius: BorderRadius.circular(10),
-      //     boxShadow: AppTheme.getElevationShadow(context, 2),
-      //   ),
-      //   child: IconButton(
-      //     onPressed: () {
-      //       HapticFeedback.lightImpact();
-      //       Navigator.pop(context);
-      //     },
-      //     icon: Icon(
-      //       Icons.arrow_back_rounded,
-      //       color: theme.colorScheme.onSurface,
-      //     ),
-      //   ),
-      // ),
+      leading: Container(
+        margin: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface.withOpacity(0.9),
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: AppTheme.getElevationShadow(context, 2),
+        ),
+        child: IconButton(
+          onPressed: () {
+            HapticFeedback.lightImpact();
+            Navigator.pop(context);
+          },
+          icon: Icon(
+            Icons.arrow_back_rounded,
+            color: theme.colorScheme.onSurface,
+          ),
+        ),
+      ),
       flexibleSpace: FlexibleSpaceBar(
         titlePadding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
         title: Text(

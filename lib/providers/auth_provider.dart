@@ -23,15 +23,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = state.copyWith(isLoading: true);
 
     try {
-      // Check if user data exists in SharedPreferences
       final prefs = await SharedPreferences.getInstance();
       final hasCompletedOnboarding =
           prefs.getBool('onboarding_completed') ?? false;
-      final userDataString = prefs.getString('cached_user_data');
 
-      // Listen to auth state changes
-      _firebaseAuth.authStateChanges().listen((User? firebaseUser) async {
-        if (firebaseUser != null) {
+      User? firebaseUser = _firebaseAuth.currentUser;
+
+      if (firebaseUser != null) {
+        try {
+          await _createOrUpdateUserDocument(firebaseUser);
           final appUser = AppUser.fromFirebaseUser(firebaseUser);
           await _cacheUserData(appUser);
 
@@ -41,27 +41,47 @@ class AuthNotifier extends StateNotifier<AuthState> {
             isLoading: false,
             hasCompletedOnboarding: hasCompletedOnboarding,
           );
-        } else {
-          await _clearCachedUserData();
+        } catch (e) {
+          debugPrint('Error creating/updating user doc during init: $e');
           state = state.copyWith(
-            user: null,
-            isAuthenticated: false,
             isLoading: false,
-            hasCompletedOnboarding: hasCompletedOnboarding,
+            error: 'Failed to initialize user data: ${e.toString()}',
           );
         }
-      });
+      } else {
+        _firebaseAuth.authStateChanges().listen((User? user) async {
+          if (user != null) {
+            try {
+              await _createOrUpdateUserDocument(user);
+              final appUser = AppUser.fromFirebaseUser(user);
+              await _cacheUserData(appUser);
 
-      // If we have cached user data but no Firebase user, try to restore session
-      if (userDataString != null && _firebaseAuth.currentUser == null) {
-        // The auth state listener will handle the rest
+              state = state.copyWith(
+                user: appUser,
+                isAuthenticated: true,
+                isLoading: false,
+                hasCompletedOnboarding: hasCompletedOnboarding,
+              );
+            } catch (e) {
+              debugPrint('Error creating/updating user doc on auth change: $e');
+              state = state.copyWith(
+                isLoading: false,
+                error: 'Failed to sync user data: ${e.toString()}',
+              );
+            }
+          } else {
+            await _clearCachedUserData();
+            state = state.copyWith(
+              user: null,
+              isAuthenticated: false,
+              isLoading: false,
+              hasCompletedOnboarding: hasCompletedOnboarding,
+            );
+          }
+        });
       }
-
-      state = state.copyWith(
-        isLoading: false,
-        hasCompletedOnboarding: hasCompletedOnboarding,
-      );
     } catch (e) {
+      debugPrint('Initialization error: $e');
       state = state.copyWith(
         isLoading: false,
         error: 'Failed to initialize authentication: ${e.toString()}',
@@ -89,7 +109,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  // Create or update user document in Firestore
   Future<void> _createOrUpdateUserDocument(User firebaseUser,
       {bool isNewUser = false}) async {
     try {
@@ -109,41 +128,41 @@ class AuthNotifier extends StateNotifier<AuthState> {
       };
 
       if (!userDoc.exists || isNewUser) {
-        // Create new user document
-        await userRef.set({
-          ...userData,
-          'createdAt': FieldValue.serverTimestamp(),
-          // Add any additional default fields for new users
-          'preferences': {
-            'theme': 'system',
-            'notifications': true,
-            'language': 'en',
-          },
-          'profile': {
-            'bio': '',
-            'location': '',
-            'website': '',
-          },
-          'stats': {
-            'totalScans': 0,
-            'totalImages': 0,
-            'favoriteCount': 0,
-          },
-        });
+        await userRef.set(
+            {
+              ...userData,
+              'createdAt': FieldValue.serverTimestamp(),
+              'preferences': {
+                'theme': 'system',
+                'notifications': true,
+                'language': 'en',
+              },
+              'profile': {
+                'bio': '',
+                'location': '',
+                'website': '',
+              },
+              'stats': {
+                'totalScans': 0,
+                'totalImages': 0,
+                'favoriteCount': 0,
+              },
+            },
+            SetOptions(
+                merge: true)); // Use merge to avoid overwriting existing data
         debugPrint('Created new user document for ${firebaseUser.uid}');
       } else {
-        // Update existing user document
         await userRef.update(userData);
         debugPrint('Updated user document for ${firebaseUser.uid}');
       }
     } catch (e) {
-      debugPrint('Failed to create/update user document: $e');
-      // Don't throw here as authentication should still succeed
-      // You might want to show a warning to the user
+      debugPrint(
+          'Failed to create/update user document: $e - User: ${firebaseUser.uid}');
+      // Re-throw to ensure the error is visible in the state
+      rethrow;
     }
   }
 
-  // Email & Password Sign In
   Future<void> signInWithEmailAndPassword(String email, String password) async {
     state = state.copyWith(isLoading: true, error: null);
 
@@ -155,9 +174,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       );
 
       if (result.user != null) {
-        // Update user document in Firestore
         await _createOrUpdateUserDocument(result.user!);
-
         final appUser = AppUser.fromFirebaseUser(result.user!);
         await _cacheUserData(appUser);
 
@@ -180,7 +197,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  // Email & Password Registration
   Future<void> registerWithEmailAndPassword(
       String email, String password) async {
     state = state.copyWith(isLoading: true, error: null);
@@ -193,12 +209,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
       );
 
       if (result.user != null) {
-        // Send email verification
         await result.user!.sendEmailVerification();
-
-        // Create user document in Firestore (new user)
         await _createOrUpdateUserDocument(result.user!, isNewUser: true);
-
         final appUser = AppUser.fromFirebaseUser(result.user!);
         await _cacheUserData(appUser);
 
@@ -221,12 +233,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  // Google Sign In
   Future<void> signInWithGoogle() async {
     state = state.copyWith(isLoading: true, error: null);
 
     try {
-      // Trigger the authentication flow
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
 
       if (googleUser == null) {
@@ -234,27 +244,20 @@ class AuthNotifier extends StateNotifier<AuthState> {
         return;
       }
 
-      // Obtain the auth details from the request
       final GoogleSignInAuthentication googleAuth =
           await googleUser.authentication;
 
-      // Create a new credential
       final credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
 
-      // Sign in to Firebase with the Google credential
       final UserCredential result =
           await _firebaseAuth.signInWithCredential(credential);
 
       if (result.user != null) {
-        // Check if this is a new user
         final isNewUser = result.additionalUserInfo?.isNewUser ?? false;
-
-        // Create or update user document in Firestore
         await _createOrUpdateUserDocument(result.user!, isNewUser: isNewUser);
-
         final appUser = AppUser.fromFirebaseUser(result.user!);
         await _cacheUserData(appUser);
 
@@ -272,7 +275,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  // Apple Sign In
   Future<void> signInWithApple() async {
     if (!Platform.isIOS) {
       state = state.copyWith(
@@ -284,7 +286,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = state.copyWith(isLoading: true, error: null);
 
     try {
-      // Check if Apple Sign In is available
       final isAvailable = await SignInWithApple.isAvailable();
       if (!isAvailable) {
         state = state.copyWith(
@@ -294,7 +295,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
         return;
       }
 
-      // Request Apple ID credential
       final appleCredential = await SignInWithApple.getAppleIDCredential(
         scopes: [
           AppleIDAuthorizationScopes.email,
@@ -302,18 +302,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
         ],
       );
 
-      // Create OAuth credential for Firebase
       final oAuthCredential = OAuthProvider("apple.com").credential(
         idToken: appleCredential.identityToken,
         accessToken: appleCredential.authorizationCode,
       );
 
-      // Sign in to Firebase
       final UserCredential result =
           await _firebaseAuth.signInWithCredential(oAuthCredential);
 
       if (result.user != null) {
-        // Update display name if provided by Apple and not already set
         if (appleCredential.givenName != null &&
             result.user!.displayName == null) {
           final displayName =
@@ -322,12 +319,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
           await result.user!.updateDisplayName(displayName);
         }
 
-        // Check if this is a new user
         final isNewUser = result.additionalUserInfo?.isNewUser ?? false;
-
-        // Create or update user document in Firestore
         await _createOrUpdateUserDocument(result.user!, isNewUser: isNewUser);
-
         final appUser = AppUser.fromFirebaseUser(result.user!);
         await _cacheUserData(appUser);
 
@@ -345,7 +338,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  // Anonymous Sign In (Guest Mode)
   Future<void> signInAnonymously() async {
     state = state.copyWith(isLoading: true, error: null);
 
@@ -353,9 +345,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       final UserCredential result = await _firebaseAuth.signInAnonymously();
 
       if (result.user != null) {
-        // Create user document in Firestore for anonymous user
         await _createOrUpdateUserDocument(result.user!, isNewUser: true);
-
         final appUser = AppUser.fromFirebaseUser(result.user!);
         await _cacheUserData(appUser);
 
@@ -373,7 +363,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  // Convert Anonymous to Permanent Account
   Future<void> linkEmailPassword(String email, String password) async {
     if (state.user == null || !state.user!.isAnonymous) {
       state = state.copyWith(error: 'No anonymous user to link');
@@ -389,9 +378,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
           await _firebaseAuth.currentUser!.linkWithCredential(credential);
 
       if (result.user != null) {
-        // Update user document - convert from anonymous to permanent
         await _createOrUpdateUserDocument(result.user!, isNewUser: false);
-
         final appUser = AppUser.fromFirebaseUser(result.user!);
         await _cacheUserData(appUser);
 
@@ -409,7 +396,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  // Sign Out
   Future<void> signOut() async {
     state = state.copyWith(isLoading: true);
 
@@ -434,7 +420,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  // Reset Password
   Future<void> resetPassword(String email) async {
     state = state.copyWith(isLoading: true, error: null);
 
@@ -449,7 +434,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  // Update Profile
   Future<void> updateProfile({String? displayName, String? photoURL}) async {
     if (state.user == null) return;
 
@@ -466,13 +450,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
         await user.updatePhotoURL(photoURL);
       }
 
-      // Reload user data
       await user.reload();
       final updatedUser = _firebaseAuth.currentUser!;
-
-      // Update Firestore document
       await _createOrUpdateUserDocument(updatedUser);
-
       final appUser = AppUser.fromFirebaseUser(updatedUser);
       await _cacheUserData(appUser);
 
@@ -488,7 +468,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  // Mark Onboarding as Completed
   Future<void> completeOnboarding() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -500,12 +479,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  // Clear Error
   void clearError() {
     state = state.copyWith(error: null);
   }
 
-  // Helper method to get user-friendly error messages
   String _getErrorMessage(String errorCode) {
     switch (errorCode) {
       case 'user-not-found':
@@ -536,12 +513,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 }
 
-// Provider instances
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>(
   (ref) => AuthNotifier(),
 );
 
-// Helper providers
 final currentUserProvider = Provider<AppUser?>((ref) {
   return ref.watch(authProvider).user;
 });

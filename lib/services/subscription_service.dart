@@ -340,7 +340,7 @@ class SubscriptionService {
   }
 
   String _generateCacheIntegrity(String data) {
-    return sha256.convert(utf8.encode(data + 'salt')).toString();
+    return sha256.convert(utf8.encode('${data}salt')).toString();
   }
 
   Future<void> _clearCachedSubscription() async {
