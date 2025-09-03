@@ -1954,8 +1954,18 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
                   onChanged(newValue);
                 }
               : (value) => _showPremiumRequired(),
-          activeThumbColor: _getModeColor(),
-          activeTrackColor: _getModeColor().withOpacity(0.3),
+          thumbColor: WidgetStateProperty.resolveWith<Color>((states) {
+            if (states.contains(WidgetState.selected)) {
+              return _getModeColor(); // Active thumb color
+            }
+            return Colors.grey.shade400; // Inactive thumb color
+          }),
+          trackColor: WidgetStateProperty.resolveWith<Color>((states) {
+            if (states.contains(WidgetState.selected)) {
+              return _getModeColor().withOpacity(0.3); // Active track color
+            }
+            return Colors.grey.shade600; // Inactive track color
+          }),
         ),
         onTap: isEnabled
             ? () {

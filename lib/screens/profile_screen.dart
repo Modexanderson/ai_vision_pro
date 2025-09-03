@@ -2323,13 +2323,24 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                 ),
           ),
           trailing: Switch(
-            value: value,
-            onChanged: (newValue) {
-              setState(() => value = newValue);
-              onChanged(newValue);
-            },
-            activeThumbColor: Theme.of(context).colorScheme.primary,
-          ),
+  value: value,
+  onChanged: (newValue) {
+    setState(() => value = newValue);
+    onChanged(newValue);
+  },
+  thumbColor: WidgetStateProperty.resolveWith<Color>((states) {
+    if (states.contains(WidgetState.selected)) {
+      return Theme.of(context).colorScheme.primary; // Active thumb color
+    }
+    return Theme.of(context).colorScheme.outline; // Inactive thumb color
+  }),
+  trackColor: WidgetStateProperty.resolveWith<Color>((states) {
+    if (states.contains(WidgetState.selected)) {
+      return Theme.of(context).colorScheme.primary.withOpacity(0.3); // Active track color
+    }
+    return Theme.of(context).colorScheme.outline.withOpacity(0.2); // Inactive track color
+  }),
+)
         );
       },
     );
