@@ -1,5 +1,3 @@
-// models/subscription_data.dart
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../services/subscription_service.dart';
@@ -31,6 +29,7 @@ class SubscriptionData {
     this.gracePeriodUntil,
   });
 
+  // For Firestore: Uses Timestamp
   Map<String, dynamic> toMap() {
     return {
       'userId': userId,
@@ -44,10 +43,22 @@ class SubscriptionData {
       'verificationData': verificationData,
       'cancelledAt':
           cancelledAt != null ? Timestamp.fromDate(cancelledAt!) : null,
-      'gracePeriodUntil':
-          gracePeriodUntil?.toIso8601String(),
+      'gracePeriodUntil': gracePeriodUntil?.toIso8601String(),
       'lastValidated': FieldValue.serverTimestamp(),
     };
+  }
+
+  // Helper to parse dates flexibly (Timestamp from Firestore, String from cache)
+  static DateTime _parseDate(dynamic value) {
+    if (value is Timestamp) {
+      return value.toDate();
+    } else if (value is String) {
+      return DateTime.parse(value);
+    } else if (value is int) {
+      // Optional: Handle milliseconds if needed
+      return DateTime.fromMillisecondsSinceEpoch(value);
+    }
+    throw Exception('Invalid date format: $value');
   }
 
   factory SubscriptionData.fromMap(Map<String, dynamic> map) {
@@ -55,21 +66,36 @@ class SubscriptionData {
       userId: map['userId'] ?? '',
       productId: map['productId'] ?? '',
       transactionId: map['transactionId'] ?? '',
-      purchaseDate: (map['purchaseDate'] as Timestamp).toDate(),
-      expiryDate: map['expiryDate'] != null
-          ? (map['expiryDate'] as Timestamp).toDate()
-          : null,
+      purchaseDate: _parseDate(map['purchaseDate']),
+      expiryDate:
+          map['expiryDate'] != null ? _parseDate(map['expiryDate']) : null,
       isActive: map['isActive'] ?? false,
       platform: map['platform'] ?? '',
       originalTransactionId: map['originalTransactionId'],
       verificationData: map['verificationData'],
-      cancelledAt: map['cancelledAt'] != null
-          ? (map['cancelledAt'] as Timestamp).toDate()
-          : null,
+      cancelledAt:
+          map['cancelledAt'] != null ? _parseDate(map['cancelledAt']) : null,
       gracePeriodUntil: map['gracePeriodUntil'] != null
           ? DateTime.parse(map['gracePeriodUntil'] as String)
           : null,
     );
+  }
+
+  // For JSON caching: Uses encodable strings (add this and use in SubscriptionService._cacheSubscriptionStatus)
+  Map<String, dynamic> toJsonMap() {
+    return {
+      'userId': userId,
+      'productId': productId,
+      'transactionId': transactionId,
+      'purchaseDate': purchaseDate.toIso8601String(),
+      'expiryDate': expiryDate?.toIso8601String(),
+      'isActive': isActive,
+      'platform': platform,
+      'originalTransactionId': originalTransactionId,
+      'verificationData': verificationData,
+      'cancelledAt': cancelledAt?.toIso8601String(),
+      'gracePeriodUntil': gracePeriodUntil?.toIso8601String(),
+    };
   }
 
   bool get isExpired {
@@ -83,13 +109,12 @@ class SubscriptionData {
   }
 
   String get planName {
-    switch (productId) {
-      case SubscriptionService.monthlyProductId:
-        return 'Monthly';
-      case SubscriptionService.yearlyProductId:
-        return 'Yearly';
-      default:
-        return 'Unknown';
+    if (productId.contains('monthly') || productId.contains('test_monthly')) {
+      return 'Monthly';
+    } else if (productId.contains('yearly') ||
+        productId.contains('test_yearly')) {
+      return 'Yearly';
     }
+    return 'Unknown';
   }
 }

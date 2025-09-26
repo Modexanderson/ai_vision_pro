@@ -296,7 +296,19 @@ class SubscriptionService {
 
   Future<void> _cacheSubscriptionStatus(SubscriptionData subscription) async {
     final prefs = await SharedPreferences.getInstance();
-    final cacheData = jsonEncode(subscription.toMap());
+    final jsonMap = {
+      'userId': subscription.userId,
+      'productId': subscription.productId,
+      'transactionId': subscription.transactionId,
+      'purchaseDate': subscription.purchaseDate.toIso8601String(),
+      'expiryDate': subscription.expiryDate?.toIso8601String(),
+      'isActive': subscription.isActive,
+      'platform': subscription.platform,
+      'originalTransactionId': subscription.originalTransactionId,
+      'verificationData': subscription.verificationData,
+      'gracePeriodUntil': subscription.gracePeriodUntil?.toIso8601String(),
+    };
+    final cacheData = jsonEncode(jsonMap);
     final integrity = _generateCacheIntegrity(cacheData);
     await prefs.setString(_cacheKey, cacheData);
     await prefs.setString(_cacheIntegrityKey, integrity);

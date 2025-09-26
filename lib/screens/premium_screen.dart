@@ -178,6 +178,7 @@ class _PremiumScreenState extends ConsumerState<PremiumScreen>
                 _buildUsageStats(
                     analyticsState, historyList, favoritesList, theme),
                 _buildPremiumFeatures(theme),
+                // Add test controls at the bottom (only shows in test mode)
                 _buildPremiumSupport(theme),
               ],
 

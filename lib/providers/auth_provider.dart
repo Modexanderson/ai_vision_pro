@@ -189,11 +189,13 @@ class AuthNotifier extends StateNotifier<AuthState> {
         isLoading: false,
         error: _getErrorMessage(e.code),
       );
+      debugPrint(_getErrorMessage(e.code));
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
         error: 'An unexpected error occurred: ${e.toString()}',
       );
+      debugPrint('An unexpected error occurred: ${e.toString()}');
     }
   }
 
@@ -225,11 +227,13 @@ class AuthNotifier extends StateNotifier<AuthState> {
         isLoading: false,
         error: _getErrorMessage(e.code),
       );
+      debugPrint(_getErrorMessage(e.code));
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
         error: 'An unexpected error occurred: ${e.toString()}',
       );
+      debugPrint('An unexpected error occurred: ${e.toString()}');
     }
   }
 
@@ -272,6 +276,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         isLoading: false,
         error: 'Google sign in failed: ${e.toString()}',
       );
+      debugPrint('An unexpected error occurred: ${e.toString()}');
     }
   }
 
@@ -335,6 +340,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         isLoading: false,
         error: 'Apple sign in failed: ${e.toString()}',
       );
+      debugPrint('Apple sign in failed: ${e.toString()}');
     }
   }
 
@@ -360,6 +366,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         isLoading: false,
         error: 'Anonymous sign in failed: ${e.toString()}',
       );
+      debugPrint('Anonymous sign in failed: ${e.toString()}');
     }
   }
 
@@ -392,6 +399,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
       state = state.copyWith(
         isLoading: false,
         error: _getErrorMessage(e.code),
+      );
+      debugPrint(
+        _getErrorMessage(e.code),
       );
     }
   }
