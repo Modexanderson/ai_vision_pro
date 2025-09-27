@@ -1849,81 +1849,95 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen>
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        height: 400,
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          boxShadow: AppTheme.getElevationShadow(context, 8),
-        ),
-        child: Column(
-          children: [
-            // Handle
-            Container(
-              width: 40,
-              height: 4,
-              margin: const EdgeInsets.only(top: 12),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.outline.withOpacity(0.4),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-
-            // Header
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: Text(
-                'Export All History (${historyList.length} items)',
-                style: theme.textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: theme.colorScheme.onSurface,
+      isScrollControlled: true, // KEY FIX: Allow custom sizing
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.6, // Start at 60% of screen height
+        minChildSize: 0.4, // Minimum 40% of screen height
+        maxChildSize: 0.8, // Maximum 80% of screen height
+        builder: (context, scrollController) => Container(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            boxShadow: AppTheme.getElevationShadow(context, 8),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min, // KEY FIX: Use minimum space
+            children: [
+              // Handle
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(top: 12),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.outline.withOpacity(0.4),
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
-            ),
 
-            // Export Options
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Column(
-                  children: [
-                    _buildExportOption(
-                      icon: Icons.picture_as_pdf_rounded,
-                      color: AppTheme.errorColor,
-                      title: 'Export as PDF Report',
-                      subtitle: 'Complete history with images and analysis',
-                      onTap: () => _performBulkExport('PDF', theme),
-                      theme: theme,
-                    ),
-                    _buildExportOption(
-                      icon: Icons.table_chart_rounded,
-                      color: AppTheme.successColor,
-                      title: 'Export as CSV',
-                      subtitle: 'Spreadsheet format for data analysis',
-                      onTap: () => _performBulkExport('CSV', theme),
-                      theme: theme,
-                    ),
-                    _buildExportOption(
-                      icon: Icons.code_rounded,
-                      color: AppTheme.primaryColor,
-                      title: 'Export as JSON',
-                      subtitle: 'Raw data format with all metadata',
-                      onTap: () => _performBulkExport('JSON', theme),
-                      theme: theme,
-                    ),
-                    _buildExportOption(
-                      icon: Icons.archive_rounded,
-                      color: AppTheme.warningColor,
-                      title: 'Export as Archive',
-                      subtitle: 'ZIP file with images and data',
-                      onTap: () => _performBulkExport('ZIP', theme),
-                      theme: theme,
-                    ),
-                  ],
+              // Header
+              Padding(
+                padding:
+                    const EdgeInsets.fromLTRB(20, 16, 20, 8), // Reduced padding
+                child: Text(
+                  'Export All History (${historyList.length} items)',
+                  style: theme.textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                  textAlign: TextAlign.center,
                 ),
               ),
-            ),
-          ],
+
+              // Export Options with ScrollView
+              Expanded(
+                child: SingleChildScrollView(
+                  controller: scrollController,
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Column(
+                    children: [
+                      _buildExportOption(
+                        icon: Icons.picture_as_pdf_rounded,
+                        color: AppTheme.errorColor,
+                        title: 'Export as PDF Report',
+                        subtitle: 'Complete history with images and analysis',
+                        onTap: () => _performBulkExport('PDF', theme),
+                        theme: theme,
+                      ),
+                      const SizedBox(height: 8), // Add spacing between options
+                      _buildExportOption(
+                        icon: Icons.table_chart_rounded,
+                        color: AppTheme.successColor,
+                        title: 'Export as CSV',
+                        subtitle: 'Spreadsheet format for data analysis',
+                        onTap: () => _performBulkExport('CSV', theme),
+                        theme: theme,
+                      ),
+                      const SizedBox(height: 8),
+                      _buildExportOption(
+                        icon: Icons.code_rounded,
+                        color: AppTheme.primaryColor,
+                        title: 'Export as JSON',
+                        subtitle: 'Raw data format with all metadata',
+                        onTap: () => _performBulkExport('JSON', theme),
+                        theme: theme,
+                      ),
+                      const SizedBox(height: 8),
+                      _buildExportOption(
+                        icon: Icons.archive_rounded,
+                        color: AppTheme.warningColor,
+                        title: 'Export as Archive',
+                        subtitle: 'ZIP file with images and data',
+                        onTap: () => _performBulkExport('ZIP', theme),
+                        theme: theme,
+                      ),
+                      const SizedBox(
+                          height: 20), // Bottom padding for safe area
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

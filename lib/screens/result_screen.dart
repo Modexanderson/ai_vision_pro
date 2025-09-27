@@ -25,6 +25,7 @@ import '../providers/favorites_provider.dart';
 import '../providers/history_provider.dart';
 import '../providers/premium_provider.dart';
 import '../config/app_theme.dart';
+import '../utils/camera_mode.dart';
 import '../widgets/ad_widgets.dart';
 import '../widgets/interactive_overlay.dart';
 
@@ -55,7 +56,54 @@ class _ResultScreenState extends ConsumerState<ResultScreen>
     super.initState();
     _initializeControllers();
     _initializeTTS();
-    _triggerAnalytics();
+
+    // Check if we have a result, if not, handle arguments
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final detectionState = ref.read(detectionProvider);
+      if (detectionState.currentResult == null) {
+        // Try to get arguments and process them
+        final args =
+            ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+        if (args != null && args.containsKey('imagePath')) {
+          _processImageFromArguments(args);
+        } else {
+          // No result and no arguments, navigate back
+          Navigator.pop(context);
+        }
+      }
+      _triggerAnalytics();
+    });
+  }
+
+  void _processImageFromArguments(Map<String, dynamic> args) async {
+    final imagePath = args['imagePath'] as String;
+    final source = args['source'] as String? ?? 'unknown';
+
+    try {
+      final detectionNotifier = ref.read(detectionProvider.notifier);
+      await detectionNotifier.processImage(
+        File(imagePath),
+        mode:
+            CameraMode.object, // You might want to pass this as an argument too
+      );
+
+      // Track analytics
+      ref.read(analyticsProvider.notifier).trackDetection(
+            CameraMode.object,
+            source == 'gallery' ? 0 : 1,
+          );
+    } catch (e) {
+      // Handle error and navigate back
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to process image: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    }
   }
 
   void _initializeControllers() {
@@ -3768,7 +3816,8 @@ class _ResultScreenState extends ConsumerState<ResultScreen>
       build: (pw.Context context) {
         return pw.Column(
           children: [
-            pw.Text('Detection Results', style: const pw.TextStyle(fontSize: 24)),
+            pw.Text('Detection Results',
+                style: const pw.TextStyle(fontSize: 24)),
             pw.SizedBox(height: 20),
             pw.Image(pw.MemoryImage(result.imageFile.readAsBytesSync())),
             pw.SizedBox(height: 20),

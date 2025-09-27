@@ -14,6 +14,7 @@ import '../services/ml_service.dart';
 import '../services/subscription_service.dart';
 import '../providers/premium_provider.dart';
 import '../utils/camera_mode.dart';
+import '../providers/history_provider.dart'; // Add this import
 
 class DetectionProvider extends StateNotifier<DetectionState> {
   DetectionProvider(this._ref) : super(DetectionState.initial());
@@ -37,6 +38,7 @@ class DetectionProvider extends StateNotifier<DetectionState> {
         objects: [],
         timestamp: DateTime.now(),
         isProcessing: true,
+        mode: mode,
       ),
     );
 
@@ -78,6 +80,11 @@ class DetectionProvider extends StateNotifier<DetectionState> {
 
       state = state.copyWith(currentResult: result);
 
+      if (objects.isNotEmpty) {
+        await _saveToHistory(result);
+      }
+
+      // Track analytics (this will now be handled by history provider)
       _analyticsService.trackDetection(mode, objects.length);
 
       if (_isPremium) {
@@ -90,6 +97,17 @@ class DetectionProvider extends StateNotifier<DetectionState> {
           isProcessing: false,
         ),
       );
+    }
+  }
+
+  // New method to save detection result to history
+  Future<void> _saveToHistory(DetectionResult result) async {
+    try {
+      final historyNotifier = _ref.read(historyProvider.notifier);
+      await historyNotifier.saveResult(result);
+      debugPrint('Detection result saved to history: ${result.id}');
+    } catch (e) {
+      debugPrint('Error saving to history: $e');
     }
   }
 

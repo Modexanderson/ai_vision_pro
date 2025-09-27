@@ -14,6 +14,9 @@ import 'home_screen.dart';
 import 'settings_screen.dart';
 import 'profile_screen.dart';
 
+// Bottom navigation provider
+final bottomNavIndexProvider = StateProvider<int>((ref) => 0);
+
 class MainNavigationScreen extends ConsumerStatefulWidget {
   const MainNavigationScreen({super.key});
 
@@ -23,18 +26,17 @@ class MainNavigationScreen extends ConsumerStatefulWidget {
 }
 
 class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
-  int _currentIndex = 0;
-
-  final List<Widget> _screens = [
-    const HomeScreen(),
-    const HistoryScreen(),
-    const CameraScreen(),
-    const ProfileScreen(),
-    const SettingsScreen(), // Replaced PremiumScreen with SettingsScreen
+  final List<Widget> _screens = const [
+    HomeScreen(),
+    HistoryScreen(),
+    CameraScreen(),
+    ProfileScreen(),
+    SettingsScreen(), // Replaced PremiumScreen with SettingsScreen
   ];
 
   @override
   Widget build(BuildContext context) {
+    final currentIndex = ref.watch(bottomNavIndexProvider);
     final isPremium = ref.watch(premiumProvider).isPremium;
     final theme = Theme.of(context);
 
@@ -42,11 +44,11 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
       body: Stack(
         children: [
           IndexedStack(
-            index: _currentIndex,
+            index: currentIndex,
             children: _screens,
           ),
           // Persistent banner ad for free users, hidden on CameraScreen
-          if (!isPremium && _currentIndex != 2)
+          if (!isPremium && currentIndex != 2)
             Positioned(
               bottom: 5,
               left: 0,
@@ -107,8 +109,7 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
               const SizedBox(width: 40), // Space for FAB
               _buildNavItem(
                   3, Icons.person_outline, Icons.person, 'Profile', theme),
-              _buildSettingsNavItem(
-                  theme), // Replaced PremiumNavItem with SettingsNavItem
+              _buildSettingsNavItem(theme),
             ],
           ),
         ),
@@ -118,7 +119,8 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
 
   Widget _buildNavItem(int index, IconData outlinedIcon, IconData filledIcon,
       String label, ThemeData theme) {
-    final isSelected = _currentIndex == index;
+    final currentIndex = ref.watch(bottomNavIndexProvider);
+    final isSelected = currentIndex == index;
 
     return Expanded(
       child: InkWell(
@@ -178,7 +180,8 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
   }
 
   Widget _buildSettingsNavItem(ThemeData theme) {
-    final isSelected = _currentIndex == 4;
+    final currentIndex = ref.watch(bottomNavIndexProvider);
+    final isSelected = currentIndex == 4;
 
     return Expanded(
       child: InkWell(
@@ -274,14 +277,15 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
   }
 
   void _navigateToPage(int index) {
-    if (_currentIndex == index) return;
+    final currentIndex = ref.read(bottomNavIndexProvider);
+    if (currentIndex == index) return;
 
-    final previousIndex = _currentIndex;
-    setState(() => _currentIndex = index);
+    // update provider state instead of reassigning final variable
+    ref.read(bottomNavIndexProvider.notifier).state = index;
 
     // Trigger interstitial ad on page change, except for CameraScreen
     final isPremium = ref.read(premiumProvider).isPremium;
-    if (!isPremium && index != previousIndex && index != 2) {
+    if (!isPremium && index != currentIndex && index != 2) {
       ref.read(adsProvider.notifier).onScreenTransition();
     }
   }

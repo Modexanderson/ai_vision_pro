@@ -1410,13 +1410,32 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
         final detectionNotifier = ref.read(detectionProvider.notifier);
         await detectionNotifier.processImage(
           File(image.path),
-          mode: _currentMode,
+          mode: _currentMode, // Use the currently selected mode
         );
 
         ref.read(analyticsProvider.notifier).trackDetection(_currentMode, 0);
 
         if (mounted) {
-          Navigator.pushNamed(context, '/result');
+          // Check if processing was successful
+          final detectionState = ref.read(detectionProvider);
+          if (detectionState.currentResult != null) {
+            final isPremium = ref.read(premiumProvider).isPremium;
+
+            // Show interstitial ad for non-premium users
+            if (!isPremium) {
+              ref.read(adsProvider.notifier).showInterstitialAd(
+                onAdDismissed: () {
+                  if (mounted) {
+                    Navigator.pushNamed(context, '/result');
+                  }
+                },
+              );
+            } else {
+              Navigator.pushNamed(context, '/result');
+            }
+          } else {
+            _showErrorSnackBar('Failed to process the selected image');
+          }
         }
       }
     } catch (e) {

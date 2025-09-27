@@ -20,6 +20,8 @@ import 'config/app_config.dart';
 import 'config/app_router.dart';
 import 'config/app_theme.dart';
 import 'models/auth_state.dart';
+import 'providers/analytics_provider.dart';
+import 'providers/history_provider.dart';
 import 'providers/theme_provider.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/auth_screen.dart';
@@ -213,15 +215,45 @@ class AppInitializer extends ConsumerStatefulWidget {
 }
 
 class _AppInitializerState extends ConsumerState<AppInitializer> {
+  bool _isDataLoaded = false;
+
   @override
   void initState() {
     super.initState();
-    // No ref.listen here, moved to build method
+    // Initialize data loading after the first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeAppData();
+    });
+  }
+
+  Future<void> _initializeAppData() async {
+    try {
+      debugPrint('🔄 Loading app data...');
+
+      // Load analytics first
+      await ref.read(analyticsProvider.notifier).refreshAnalytics();
+      debugPrint('✅ Analytics loaded');
+
+      // Load history (this will sync with analytics if needed)
+      await ref.read(historyProvider.notifier).refreshHistory();
+      debugPrint('✅ History loaded');
+
+      if (mounted) {
+        setState(() => _isDataLoaded = true);
+        debugPrint('🎉 App data initialization complete!');
+      }
+    } catch (e) {
+      debugPrint('❌ Error loading app data: $e');
+      // Still mark as loaded to prevent infinite loading
+      if (mounted) {
+        setState(() => _isDataLoaded = true);
+      }
+    }
   }
 
   Future<void> _determineInitialRoute(AuthState authState) async {
     // Wait until auth initialization is complete (isLoading = false)
-    if (authState.isLoading) return;
+    if (authState.isLoading || !_isDataLoaded) return;
 
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -272,6 +304,7 @@ class _AppInitializerState extends ConsumerState<AppInitializer> {
         ref.listen<AuthState>(authProvider, (previous, next) {
           _determineInitialRoute(next);
         });
+
         return Scaffold(
           backgroundColor: Theme.of(context).colorScheme.primary,
           body: Center(
@@ -315,6 +348,13 @@ class _AppInitializerState extends ConsumerState<AppInitializer> {
                     strokeWidth: 3,
                     valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                   ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  _isDataLoaded ? 'Loading...' : 'Initializing data...',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Colors.white.withOpacity(0.8),
+                      ),
                 ),
               ],
             ),

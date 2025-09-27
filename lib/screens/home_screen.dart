@@ -1,5 +1,7 @@
 // screens/home_screen.dart
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,18 +14,22 @@ import 'package:image_picker/image_picker.dart';
 
 import '../models/achievement.dart';
 import '../models/feature_highlight.dart';
+import '../providers/ads_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/challenge_provider.dart';
+import '../providers/detection_provider.dart';
 import '../providers/history_provider.dart';
 import '../providers/analytics_provider.dart';
 import '../providers/premium_provider.dart';
 import '../config/app_theme.dart';
+import '../utils/camera_mode.dart';
 import '../widgets/achievement_banner.dart';
 import '../widgets/ad_widgets.dart';
 import '../widgets/daily_challenge.dart';
 import '../widgets/feature_explore_sheet.dart';
 import '../widgets/feature_showcase.dart';
 import '../widgets/quick_action_card.dart';
+import 'main_navigation_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -444,7 +450,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               Expanded(
                 child: _buildStatItem(
                   'Objects\nDetected',
-                  '${analyticsState.totalDetections}',
+                  '${analyticsState.totalDetections}', // Use totalDetections instead
                   Icons.category_rounded,
                   theme,
                 ),
@@ -453,7 +459,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               Expanded(
                 child: _buildStatItem(
                   'Accuracy\nRate',
-                  '${(analyticsState.averageConfidence * 100).toStringAsFixed(1)}%',
+                  analyticsState.totalDetections > 0
+                      ? '${(analyticsState.averageConfidence * 100).toStringAsFixed(1)}%'
+                      : '0%', // Handle case when no detections
                   Icons.trending_up_rounded,
                   theme,
                 ),
@@ -461,9 +469,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               _buildStatDivider(theme),
               Expanded(
                 child: _buildStatItem(
-                  'Languages\nSupported',
-                  '50+',
-                  Icons.translate_rounded,
+                  'Achievements\nUnlocked',
+                  '${_calculateUnlockedAchievements(analyticsState)}', // Calculate achievements
+                  Icons.emoji_events_rounded,
                   theme,
                 ),
               ),
@@ -472,6 +480,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         ),
       ).animate().slideY(begin: 0.3).fadeIn(),
     );
+  }
+
+// Add this helper method to calculate unlocked achievements
+  int _calculateUnlockedAchievements(AnalyticsState analyticsState) {
+    int unlockedCount = 0;
+
+    // First Scan achievement
+    if (analyticsState.totalDetections > 0) unlockedCount++;
+
+    // Explorer achievement (100 scans)
+    if (analyticsState.totalDetections >= 100) unlockedCount++;
+
+    // Accuracy Master (90%+ average accuracy)
+    if (analyticsState.averageConfidence >= 0.9) unlockedCount++;
+
+    // Add more achievements as needed
+    return unlockedCount;
   }
 
   Widget _buildStatDivider(ThemeData theme) {
@@ -535,21 +560,50 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         child: Row(
           children: [
             // Large scan card
+            // Expanded(
+            //   flex: 1,
+            //   child: InterstitialAdTrigger(
+            //     trigger: 'camera_action',
+            //     onAdDismissed: () {
+            //       ref.read(bottomNavIndexProvider.notifier).state = 2;
+            //     },
+            //     child: QuickActionCard(
+            //       title: 'Scan Object',
+            //       subtitle: 'Point and identify',
+            //       icon: Icons.camera_alt_rounded,
+            //       color: theme.colorScheme.primary,
+            //       onTap: () {
+            //         HapticFeedback.lightImpact();
+            //       },
+            //       isLarge: true,
+            //     ),
+            //   ),
+            // ),
             Expanded(
               flex: 1,
-              child: InterstitialAdTrigger(
-                trigger: 'camera_action',
-                onAdDismissed: () => Navigator.pushNamed(context, '/camera'),
-                child: QuickActionCard(
-                  title: 'Scan Object',
-                  subtitle: 'Point and identify',
-                  icon: Icons.camera_alt_rounded,
-                  color: theme.colorScheme.primary,
-                  onTap: () {
-                    HapticFeedback.lightImpact();
-                  },
-                  isLarge: true,
-                ),
+              child: QuickActionCard(
+                title: 'Scan Object',
+                subtitle: 'Point and identify',
+                icon: Icons.camera_alt_rounded,
+                color: theme.colorScheme.primary,
+                isLarge: true,
+                onTap: () {
+                  HapticFeedback.lightImpact();
+
+                  final isPremium = ref.read(premiumProvider).isPremium;
+                  if (isPremium) {
+                    // Directly go to Camera tab
+                    ref.read(bottomNavIndexProvider.notifier).state = 2;
+                  } else {
+                    // Show ad first, then navigate
+                    ref.read(adsProvider.notifier).showInterstitialAd(
+                      // trigger: 'camera_action',
+                      onAdDismissed: () {
+                        ref.read(bottomNavIndexProvider.notifier).state = 2;
+                      },
+                    );
+                  }
+                },
               ),
             ),
 
@@ -974,28 +1028,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         title: 'First Scan',
         description: 'Complete your first object detection',
         icon: Icons.camera_alt_rounded,
-        isUnlocked: analyticsState.totalDetections > 0,
+        isUnlocked: analyticsState.totalDetections > 0, // Use analytics data
         color: AppTheme.successColor,
       ),
       Achievement(
         title: 'Explorer',
-        description: 'Scan 100 different objects',
+        description: 'Complete 50 object detections',
         icon: Icons.explore_rounded,
-        isUnlocked: analyticsState.totalDetections >= 100,
+        isUnlocked: analyticsState.totalDetections >= 50, // Use real data
         color: AppTheme.primaryColor,
       ),
       Achievement(
         title: 'Accuracy Master',
-        description: 'Achieve 90%+ average accuracy',
+        description: 'Achieve 85%+ average accuracy',
         icon: Icons.trending_up_rounded,
-        isUnlocked: analyticsState.averageConfidence >= 0.9,
+        isUnlocked: analyticsState.averageConfidence >= 0.85, // Use real data
         color: AppTheme.secondaryColor,
       ),
       Achievement(
-        title: 'Daily Challenger',
-        description: 'Complete 7 daily challenges',
-        icon: Icons.star_rounded,
-        isUnlocked: false, // This would come from challenge provider
+        title: 'Variety Seeker',
+        description: 'Detect 20+ different object types',
+        icon: Icons.diversity_1_rounded,
+        isUnlocked: analyticsState.uniqueObjects.length >= 20, // Use real data
         color: AppTheme.warningColor,
       ),
     ];
@@ -1013,6 +1067,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   style: theme.textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.bold,
                     color: theme.colorScheme.onSurface,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                // Show progress indicator
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${achievements.where((a) => a.isUnlocked).length}/${achievements.length}',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
                 const Spacer(),
@@ -1229,19 +1300,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           );
         }
 
-        // Simulate processing delay
-        await Future.delayed(const Duration(seconds: 1));
+        // Process the image through the detection provider
+        final detectionNotifier = ref.read(detectionProvider.notifier);
+        await detectionNotifier.processImage(
+          File(image.path),
+          mode: CameraMode.object, // Default mode or get from user preference
+        );
+
+        // Track analytics
+        ref
+            .read(analyticsProvider.notifier)
+            .trackDetection(CameraMode.object, 0);
 
         if (mounted) {
           Navigator.pop(context); // Close loading dialog
-          Navigator.pushNamed(context, '/result', arguments: {
-            'imagePath': image.path,
-            'source': 'gallery',
-          });
+
+          // Check if detection was successful before navigating
+          final detectionState = ref.read(detectionProvider);
+          if (detectionState.currentResult != null) {
+            Navigator.pushNamed(context, '/result');
+          } else {
+            // Handle case where detection failed
+            _showErrorSnackBar('Failed to process image. Please try again.');
+          }
         }
       }
     } catch (e) {
       if (mounted) {
+        // Close loading dialog if it's open
+        Navigator.of(context, rootNavigator: true).pop();
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Row(
@@ -1273,6 +1361,40 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         );
       }
     }
+  }
+
+  void _showErrorSnackBar(String message) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(
+              Icons.error_outline_rounded,
+              color: Theme.of(context).colorScheme.onError,
+              size: 20,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onError,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Theme.of(context).colorScheme.error,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
   }
 
   void _exploreFeature(FeatureHighlight feature) {
