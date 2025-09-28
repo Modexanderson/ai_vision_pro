@@ -23,6 +23,7 @@ import '../providers/real_time_detection_provider.dart';
 import '../providers/analytics_provider.dart';
 import '../config/app_theme.dart';
 import '../utils/camera_mode.dart';
+import '../utils/haptic_feedback.dart';
 import '../utils/sound_manager.dart';
 import '../widgets/camera_settings_sheet.dart';
 import '../widgets/grid_painter.dart';
@@ -51,6 +52,8 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   Timer? _realTimeDetectionTimer;
   Timer? _captureTimer;
   StreamSubscription<AccelerometerEvent>? _accelerometerSubscription;
+  late final SoundManager _soundManager;
+  late final HapticFeedbackUtil _hapticFeedback;
 
   // State Variables
   bool _isProcessing = false;
@@ -90,6 +93,8 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     _initializeVoiceControl();
     _initializeSensors();
     _checkFirstTime();
+    _soundManager = SoundManager();
+    _hapticFeedback = HapticFeedbackUtil();
 
     // Initialize camera after build is complete
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1225,7 +1230,9 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     try {
       final cameraNotifier = ref.read(cameraProvider.notifier);
       await cameraNotifier.setFocusPoint(details.localPosition);
-      HapticFeedback.lightImpact();
+      // Enhanced feedback
+      await _hapticFeedback.focusTap();
+      await _soundManager.playFocusSound();
       await _tts.speak("Focus set");
     } catch (e) {
       debugPrint('Focus error: $e');
@@ -1234,7 +1241,9 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
 
   void _switchCamera() async {
     try {
-      HapticFeedback.lightImpact();
+      // Enhanced feedback
+      await _hapticFeedback.cameraSwitch();
+      await _soundManager.playModeSwitch();
       final cameraNotifier = ref.read(cameraProvider.notifier);
       await cameraNotifier.switchCamera();
       await _tts.speak("Camera switched");
@@ -1280,6 +1289,10 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
 
     setState(() => _isProcessing = true);
 
+    // Enhanced feedback
+    await _hapticFeedback.capturePhoto();
+    await _soundManager.playShutter();
+
     // Capture animation and feedback
     _captureAnimationController.forward().then((_) {
       _captureAnimationController.reverse();
@@ -1291,9 +1304,6 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
         setState(() => _showCaptureFlash = false);
       }
     });
-
-    HapticFeedback.mediumImpact();
-    SoundManager.playShutter();
 
     try {
       final cameraNotifier = ref.read(cameraProvider.notifier);
@@ -1321,6 +1331,15 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
             await _tts.speak("Image $_batchCount captured");
           }
         }
+
+        // Use the confidence from the current detection result
+        final detectionResult = ref.read(detectionProvider).currentResult;
+        final confidence =
+            detectionResult?.averageConfidence ?? 0.5; // fallback default
+
+        await _hapticFeedback.detectionComplete(confidence: confidence);
+
+        await _soundManager.playDetectionComplete();
 
         if (mounted) {
           final isPremium = ref.read(premiumProvider).isPremium;
@@ -1378,6 +1397,8 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       }
     } catch (e) {
       _showErrorSnackBar('Failed to capture image: $e');
+      await _hapticFeedback.detectionError();
+      await _soundManager.playError();
     } finally {
       if (mounted) {
         setState(() => _isProcessing = false);

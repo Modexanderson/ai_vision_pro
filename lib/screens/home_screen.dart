@@ -851,8 +851,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       child: Text(
                         'Try Free',
                         style: theme.textTheme.labelLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                            fontWeight: FontWeight.bold, color: Colors.black),
                       ),
                     ),
                   ),

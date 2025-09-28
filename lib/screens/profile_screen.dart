@@ -1,13 +1,20 @@
 // screens/profile_screen.dart
 
+import 'dart:io';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../models/app_user.dart';
 import '../models/detection_history.dart';
 import '../providers/auth_provider.dart';
 import '../providers/premium_provider.dart';
@@ -35,11 +42,45 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _bioController = TextEditingController();
 
+  File? _selectedImage;
+  String? _originalPhotoURL;
+  bool _hasImageChanged = false;
+
+  // Override initState to listen for user changes
   @override
   void initState() {
     super.initState();
     _initializeAnimations();
     _loadUserData();
+
+    // Listen for user changes and reload data
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.listen<AppUser?>(currentUserProvider, (previous, next) {
+        if (next != null && next != previous) {
+          _loadUserData();
+        }
+      });
+    });
+  }
+
+// Method to refresh user data from server
+  Future<void> _refreshUserData() async {
+    try {
+      final user = ref.read(currentUserProvider);
+      if (user != null) {
+        // Force refresh from Firestore
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.id)
+            .get(const GetOptions(source: Source.server));
+
+        if (userDoc.exists && mounted) {
+          _loadUserData();
+        }
+      }
+    } catch (e) {
+      debugPrint('Error refreshing user data: $e');
+    }
   }
 
   void _initializeAnimations() {
@@ -60,12 +101,39 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     _slideController.forward();
   }
 
-  void _loadUserData() {
+  // Updated _loadUserData method to load from Firestore
+  void _loadUserData() async {
     final user = ref.read(currentUserProvider);
     if (user != null) {
-      _nameController.text = user.displayName ?? 'AI Explorer';
-      _emailController.text = user.email ?? '';
-      _bioController.text = 'Exploring the world through AI vision';
+      try {
+        // Load additional profile data from Firestore
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.id)
+            .get();
+
+        if (userDoc.exists) {
+          final data = userDoc.data() as Map<String, dynamic>;
+          final profile = data['profile'] as Map<String, dynamic>? ?? {};
+
+          _nameController.text =
+              data['displayName'] ?? user.displayName ?? 'AI Explorer';
+          _emailController.text = user.email ?? '';
+          _bioController.text =
+              profile['bio'] ?? 'Exploring the world through AI vision';
+        } else {
+          // Fallback to Firebase Auth data
+          _nameController.text = user.displayName ?? 'AI Explorer';
+          _emailController.text = user.email ?? '';
+          _bioController.text = 'Exploring the world through AI vision';
+        }
+      } catch (e) {
+        debugPrint('Error loading user data from Firestore: $e');
+        // Fallback to Firebase Auth data
+        _nameController.text = user.displayName ?? 'AI Explorer';
+        _emailController.text = user.email ?? '';
+        _bioController.text = 'Exploring the world through AI vision';
+      }
     }
   }
 
@@ -207,6 +275,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
 
   Widget _buildProfileAvatar(bool isGuest, ThemeData theme) {
     final user = ref.watch(currentUserProvider);
+    // Determine the image provider
+    ImageProvider? imageProvider;
+    if (_selectedImage != null) {
+      imageProvider = FileImage(_selectedImage!);
+    } else if (user?.photoURL != null) {
+      imageProvider = NetworkImage(user!.photoURL!);
+    }
 
     return Stack(
       children: [
@@ -226,9 +301,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           child: CircleAvatar(
             radius: 60,
             backgroundColor: theme.colorScheme.surface,
-            backgroundImage:
-                user?.photoURL != null ? NetworkImage(user!.photoURL!) : null,
-            child: user?.photoURL == null
+            backgroundImage: imageProvider,
+            child: imageProvider == null
                 ? Container(
                     width: 120,
                     height: 120,
@@ -286,79 +360,86 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   }
 
   Widget _buildProfileInfo(bool isGuest, bool isPremium, ThemeData theme) {
-    final user = ref.watch(currentUserProvider);
+    return Consumer(
+      builder: (context, ref, child) {
+        final user = ref.watch(currentUserProvider);
 
-    return Column(
-      children: [
-        if (isGuest) ...[
-          Text(
-            'Welcome, Guest!',
-            style: theme.textTheme.headlineMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-          ).animate().slideY(begin: 0.3).fadeIn(delay: 400.ms),
-          const SizedBox(height: 8),
-          Text(
-            'Sign in to unlock all features',
-            style: theme.textTheme.bodyLarge?.copyWith(
-              color: Colors.white.withOpacity(0.9),
-            ),
-          ).animate().slideY(begin: 0.3).fadeIn(delay: 600.ms),
-        ] else ...[
-          Text(
-            user?.displayName ?? 'AI Explorer',
-            style: theme.textTheme.headlineMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-          ).animate().slideY(begin: 0.3).fadeIn(delay: 400.ms),
-          const SizedBox(height: 6),
-          Text(
-            user?.email ?? '',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: Colors.white.withOpacity(0.9),
-            ),
-          ).animate().slideY(begin: 0.3).fadeIn(delay: 500.ms),
-          if (isPremium) ...[
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                gradient: AppTheme.premiumGradient,
-                borderRadius: BorderRadius.circular(25),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppTheme.premiumGold.withOpacity(0.4),
-                    blurRadius: 12,
-                    spreadRadius: 1,
-                    offset: const Offset(0, 4),
+        return Column(
+          children: [
+            if (isGuest) ...[
+              Text(
+                'Welcome, Guest!',
+                style: theme.textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ).animate().slideY(begin: 0.3).fadeIn(delay: 400.ms),
+              const SizedBox(height: 8),
+              Text(
+                'Sign in to unlock all features',
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  color: Colors.white.withOpacity(0.9),
+                ),
+              ).animate().slideY(begin: 0.3).fadeIn(delay: 600.ms),
+            ] else ...[
+              Text(
+                _isEditing
+                    ? _nameController.text
+                    : (user?.displayName ?? 'AI Explorer'),
+                style: theme.textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ).animate().slideY(begin: 0.3).fadeIn(delay: 400.ms),
+              const SizedBox(height: 6),
+              Text(
+                user?.email ?? '',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: Colors.white.withOpacity(0.9),
+                ),
+              ).animate().slideY(begin: 0.3).fadeIn(delay: 500.ms),
+              if (isPremium) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    gradient: AppTheme.premiumGradient,
+                    borderRadius: BorderRadius.circular(25),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppTheme.premiumGold.withOpacity(0.4),
+                        blurRadius: 12,
+                        spreadRadius: 1,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.diamond_rounded,
-                    color: Colors.white,
-                    size: 18,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.diamond_rounded,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'PREMIUM',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 6),
-                  Text(
-                    'PREMIUM',
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ],
-              ),
-            ).animate().shimmer(duration: 2000.ms).fadeIn(delay: 600.ms),
+                ).animate().shimmer(duration: 2000.ms).fadeIn(delay: 600.ms),
+              ],
+            ],
           ],
-        ],
-      ],
+        );
+      },
     );
   }
 
@@ -1319,30 +1400,30 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             },
             theme,
           ),
-          _buildDivider(theme),
-          _buildActionTile(
-            'Share App',
-            'Tell your friends about AI Vision Pro',
-            Icons.share_rounded,
-            theme.colorScheme.secondary,
-            () {
-              HapticFeedback.lightImpact();
-              _shareApp();
-            },
-            theme,
-          ),
-          _buildDivider(theme),
-          _buildActionTile(
-            'Rate Us',
-            'Rate our app in the store',
-            Icons.star_rate_rounded,
-            AppTheme.warningColor,
-            () {
-              HapticFeedback.lightImpact();
-              _rateApp();
-            },
-            theme,
-          ),
+          // _buildDivider(theme),
+          // _buildActionTile(
+          //   'Share App',
+          //   'Tell your friends about AI Vision Pro',
+          //   Icons.share_rounded,
+          //   theme.colorScheme.secondary,
+          //   () {
+          //     HapticFeedback.lightImpact();
+          //     _shareApp();
+          //   },
+          //   theme,
+          // ),
+          // _buildDivider(theme),
+          // _buildActionTile(
+          //   'Rate Us',
+          //   'Rate our app in the store',
+          //   Icons.star_rate_rounded,
+          //   AppTheme.warningColor,
+          //   () {
+          //     HapticFeedback.lightImpact();
+          //     _rateApp();
+          //   },
+          //   theme,
+          // ),
         ],
       ),
     ).animate(delay: 800.ms).slideY(begin: 0.3).fadeIn();
@@ -1643,6 +1724,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       context: context,
       backgroundColor: Colors.transparent,
       useSafeArea: true,
+      isScrollControlled: true,
       builder: (context) => Container(
         margin: const EdgeInsets.all(20),
         decoration: BoxDecoration(
@@ -1650,62 +1732,64 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           borderRadius: BorderRadius.circular(24),
           boxShadow: AppTheme.getElevationShadow(context, 8),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Handle
-            Container(
-              width: 40,
-              height: 4,
-              margin: const EdgeInsets.only(top: 12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.outline.withOpacity(0.4),
-                borderRadius: BorderRadius.circular(2),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Handle
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(top: 12),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.outline.withOpacity(0.4),
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
-            ),
 
-            Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                children: [
-                  Text(
-                    'Change Profile Picture',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  children: [
+                    Text(
+                      'Change Profile Picture',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                    ),
+                    const SizedBox(height: 24),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildImageSourceButton(
+                            'Camera',
+                            Icons.camera_alt_rounded,
+                            () {
+                              Navigator.pop(context);
+                              _pickImage(ImageSource.camera);
+                            },
+                            Theme.of(context),
+                          ),
                         ),
-                  ),
-                  const SizedBox(height: 24),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildImageSourceButton(
-                          'Camera',
-                          Icons.camera_alt_rounded,
-                          () {
-                            Navigator.pop(context);
-                            _pickImage(ImageSource.camera);
-                          },
-                          Theme.of(context),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: _buildImageSourceButton(
+                            'Gallery',
+                            Icons.photo_library_rounded,
+                            () {
+                              Navigator.pop(context);
+                              _pickImage(ImageSource.gallery);
+                            },
+                            Theme.of(context),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: _buildImageSourceButton(
-                          'Gallery',
-                          Icons.photo_library_rounded,
-                          () {
-                            Navigator.pop(context);
-                            _pickImage(ImageSource.gallery);
-                          },
-                          Theme.of(context),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1718,7 +1802,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     ThemeData theme,
   ) {
     return Container(
-      height: 80,
+      // height: 80,
       decoration: BoxDecoration(
         border: Border.all(
           color: theme.colorScheme.outline.withOpacity(0.3),
@@ -1765,31 +1849,139 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       );
 
       if (image != null) {
-        // Show loading indicator
-        _showLoadingDialog('Updating profile picture...');
+        // Store the selected image temporarily
+        _selectedImage = File(image.path);
+        _hasImageChanged = true;
 
-        // Simulate upload delay
-        await Future.delayed(const Duration(seconds: 2));
+        setState(() {}); // Refresh UI to show new image
 
-        Navigator.pop(context); // Close loading dialog
-
-        _showSuccessSnackBar('Profile picture updated successfully!');
+        _showSuccessSnackBar('Image selected! Save your profile to upload.');
       }
     } catch (e) {
-      Navigator.pop(context); // Close loading dialog if open
-      _showErrorSnackBar('Failed to update picture: $e');
+      _showErrorSnackBar('Failed to select image: $e');
     }
   }
 
-  void _saveProfile() {
+// New method to upload image to Firebase Storage
+  Future<String> _uploadProfileImage(XFile imageFile) async {
+    try {
+      final user = ref.read(currentUserProvider);
+      if (user == null) throw Exception('User not authenticated');
+
+      final fileName =
+          'profile_${user.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final storageRef = FirebaseStorage.instance
+          .ref()
+          .child('profile_images')
+          .child(fileName);
+
+      final uploadTask = storageRef.putFile(File(imageFile.path));
+      final snapshot = await uploadTask.whenComplete(() => null);
+
+      if (snapshot.state == TaskState.success) {
+        final downloadURL = await storageRef.getDownloadURL();
+        return downloadURL;
+      } else {
+        throw Exception('Upload failed');
+      }
+    } catch (e) {
+      debugPrint('Error uploading profile image: $e');
+      rethrow;
+    }
+  }
+
+  void _saveProfile() async {
+    if (!_validateProfileData()) return;
+
     _showLoadingDialog('Saving profile...');
 
-    // Simulate save delay
-    Future.delayed(const Duration(seconds: 1), () {
+    try {
+      final displayName = _nameController.text.trim();
+      final bio = _bioController.text.trim();
+      String? newPhotoURL;
+
+      // Upload image if one was selected
+      if (_hasImageChanged && _selectedImage != null) {
+        newPhotoURL = await _uploadAndCompressProfileImage(_selectedImage!);
+      }
+
+      // Update Firebase Auth profile
+      await ref.read(authProvider.notifier).updateProfile(
+            displayName: displayName,
+            photoURL: newPhotoURL, // Only update if new image was uploaded
+          );
+
+      // Update Firestore user document
+      final user = ref.read(currentUserProvider);
+      if (user != null) {
+        final updates = {
+          'displayName': displayName,
+          'profile': {'bio': bio},
+          'updatedAt': FieldValue.serverTimestamp(),
+        };
+
+        if (newPhotoURL != null) {
+          updates['photoURL'] = newPhotoURL;
+        }
+
+        await _updateUserProfileInFirestore(user.id, updates);
+      }
+
+      // Reset image change flag
+      _hasImageChanged = false;
+      _selectedImage = null;
+
       Navigator.pop(context); // Close loading dialog
       setState(() => _isEditing = false);
       _showSuccessSnackBar('Profile updated successfully!');
-    });
+    } catch (e) {
+      Navigator.pop(context);
+      _showErrorSnackBar('Failed to update profile: $e');
+    }
+  }
+
+  Future<String> _uploadAndCompressProfileImage(File imageFile) async {
+    try {
+      final user = ref.read(currentUserProvider);
+      if (user == null) throw Exception('User not authenticated');
+
+      // Compress the image
+      final compressedImage = await _compressImage(imageFile);
+
+      final fileName =
+          'profile_${user.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final storageRef = FirebaseStorage.instance
+          .ref()
+          .child('profile_images')
+          .child(fileName);
+
+      final uploadTask = storageRef.putFile(compressedImage);
+      final snapshot = await uploadTask.whenComplete(() => null);
+
+      if (snapshot.state == TaskState.success) {
+        final downloadURL = await storageRef.getDownloadURL();
+        return downloadURL;
+      } else {
+        throw Exception('Upload failed');
+      }
+    } catch (e) {
+      debugPrint('Error uploading profile image: $e');
+      rethrow;
+    }
+  }
+
+// New method to update Firestore user document
+  Future<void> _updateUserProfileInFirestore(
+      String userId, Map<String, dynamic> updates) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .update(updates);
+    } catch (e) {
+      debugPrint('Error updating user profile in Firestore: $e');
+      rethrow;
+    }
   }
 
   void _showAchievementDetail(
@@ -2003,13 +2195,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   }
 
   void _openSupport() async {
-    const url = 'mailto:support@aivisionpro.com?subject=Support Request';
+    const url = 'aivisionproapp@gmail.com?subject=Support Request';
     try {
       if (await canLaunchUrl(Uri.parse(url))) {
         await launchUrl(Uri.parse(url));
       } else {
         _showErrorSnackBar(
-          'Could not open email client. Please contact support@aivisionpro.com',
+          'Could not open email client. Please contact https://balanced-meal-app-65cb1.web.app/support',
         );
       }
     } catch (e) {
@@ -2295,59 +2487,68 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       builder: (context, setState) {
         bool value = initialValue;
         return ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(14),
+            contentPadding: EdgeInsets.zero,
+            leading: Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(
+                icon,
+                color: Theme.of(context).colorScheme.primary,
+                size: 24,
+              ),
             ),
-            child: Icon(
-              icon,
-              color: Theme.of(context).colorScheme.primary,
-              size: 24,
+            title: Text(
+              title,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
             ),
-          ),
-          title: Text(
-            title,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-          ),
-          subtitle: Text(
-            subtitle,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  height: 1.4,
-                ),
-          ),
-          trailing: Switch(
-  value: value,
-  onChanged: (newValue) {
-    setState(() => value = newValue);
-    onChanged(newValue);
-  },
-  thumbColor: WidgetStateProperty.resolveWith<Color>((states) {
-    if (states.contains(WidgetState.selected)) {
-      return Theme.of(context).colorScheme.primary; // Active thumb color
-    }
-    return Theme.of(context).colorScheme.outline; // Inactive thumb color
-  }),
-  trackColor: WidgetStateProperty.resolveWith<Color>((states) {
-    if (states.contains(WidgetState.selected)) {
-      return Theme.of(context).colorScheme.primary.withOpacity(0.3); // Active track color
-    }
-    return Theme.of(context).colorScheme.outline.withOpacity(0.2); // Inactive track color
-  }),
-)
-        );
+            subtitle: Text(
+              subtitle,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    height: 1.4,
+                  ),
+            ),
+            trailing: Switch(
+              value: value,
+              onChanged: (newValue) {
+                setState(() => value = newValue);
+                onChanged(newValue);
+              },
+              thumbColor: WidgetStateProperty.resolveWith<Color>((states) {
+                if (states.contains(WidgetState.selected)) {
+                  return Theme.of(context)
+                      .colorScheme
+                      .primary; // Active thumb color
+                }
+                return Theme.of(context)
+                    .colorScheme
+                    .outline; // Inactive thumb color
+              }),
+              trackColor: WidgetStateProperty.resolveWith<Color>((states) {
+                if (states.contains(WidgetState.selected)) {
+                  return Theme.of(context)
+                      .colorScheme
+                      .primary
+                      .withOpacity(0.3); // Active track color
+                }
+                return Theme.of(context)
+                    .colorScheme
+                    .outline
+                    .withOpacity(0.2); // Inactive track color
+              }),
+            ));
       },
     );
   }
 
   void _openPrivacyPolicy() async {
-    const url = 'https://aivisionpro.com/privacy';
+    const url = 'https://balanced-meal-app-65cb1.web.app/privacy';
     try {
       if (await canLaunchUrl(Uri.parse(url))) {
         await launchUrl(Uri.parse(url));
@@ -2360,7 +2561,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   }
 
   void _openTermsOfService() async {
-    const url = 'https://aivisionpro.com/terms';
+    const url = 'https://balanced-meal-app-65cb1.web.app/terms';
     try {
       if (await canLaunchUrl(Uri.parse(url))) {
         await launchUrl(Uri.parse(url));
@@ -2629,7 +2830,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         actions: [
           TextButton(
             onPressed: () {
-              HapticFeedbackUtil.lightImpact();
+              HapticFeedback.lightImpact();
               Navigator.pop(context);
             },
             child: Text(
@@ -2667,11 +2868,73 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     );
   }
 
-  void _performAccountDeletion() {
+  // Enhanced delete account method with proper cleanup
+  void _performAccountDeletion() async {
     _showLoadingDialog('Deleting your account...\nPlease wait');
 
-    // Simulate deletion process
-    Future.delayed(const Duration(seconds: 3), () {
+    try {
+      final user = ref.read(currentUserProvider);
+      if (user == null) {
+        Navigator.pop(context);
+        _showErrorSnackBar('User not found');
+        return;
+      }
+
+      // Delete user data from Firestore
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.id)
+          .delete();
+
+      // Delete profile images from Storage
+      try {
+        final storageRef =
+            FirebaseStorage.instance.ref().child('profile_images');
+        final listResult = await storageRef.listAll();
+
+        for (final item in listResult.items) {
+          if (item.name.startsWith('profile_${user.id}')) {
+            await item.delete();
+          }
+        }
+      } catch (e) {
+        debugPrint('Could not delete profile images: $e');
+        // Continue with account deletion even if image deletion fails
+      }
+
+      // Delete user history and other data collections
+      try {
+        // Delete user's detection history
+        final historyQuery = await FirebaseFirestore.instance
+            .collection('detection_history')
+            .where('userId', isEqualTo: user.id)
+            .get();
+
+        for (final doc in historyQuery.docs) {
+          await doc.reference.delete();
+        }
+
+        // Delete user's favorites
+        final favoritesQuery = await FirebaseFirestore.instance
+            .collection('favorites')
+            .where('userId', isEqualTo: user.id)
+            .get();
+
+        for (final doc in favoritesQuery.docs) {
+          await doc.reference.delete();
+        }
+      } catch (e) {
+        debugPrint('Could not delete user collections: $e');
+        // Continue with account deletion
+      }
+
+      // Finally delete the Firebase Auth user
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser != null) {
+        await currentUser.delete();
+      }
+
+      // Navigate to auth screen
       Navigator.of(context).pushNamedAndRemoveUntil(
         '/auth',
         (route) => false,
@@ -2706,7 +2969,144 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           margin: const EdgeInsets.all(16),
         ),
       );
-    });
+    } catch (e) {
+      Navigator.pop(context); // Close loading dialog
+
+      // Handle specific Firebase Auth errors
+      if (e is FirebaseAuthException) {
+        if (e.code == 'requires-recent-login') {
+          _showErrorSnackBar(
+              'For security, please sign out and sign back in before deleting your account.');
+        } else {
+          _showErrorSnackBar('Failed to delete account: ${e.message}');
+        }
+      } else {
+        _showErrorSnackBar('Failed to delete account: $e');
+      }
+    }
+  }
+
+// Method to validate profile data before saving
+  bool _validateProfileData() {
+    final displayName = _nameController.text.trim();
+
+    if (displayName.isEmpty) {
+      _showErrorSnackBar('Display name cannot be empty');
+      return false;
+    }
+
+    if (displayName.length > 50) {
+      _showErrorSnackBar('Display name must be less than 50 characters');
+      return false;
+    }
+
+    if (_bioController.text.trim().length > 500) {
+      _showErrorSnackBar('Bio must be less than 500 characters');
+      return false;
+    }
+
+    return true;
+  }
+
+// Method to handle profile image errors
+  void _handleImageError(dynamic error) {
+    String message = 'Failed to update profile picture';
+
+    if (error.toString().contains('network')) {
+      message = 'Network error. Please check your connection and try again.';
+    } else if (error.toString().contains('permission')) {
+      message = 'Permission denied. Please check storage permissions.';
+    } else if (error.toString().contains('storage/object-not-found')) {
+      message = 'Image not found. Please try selecting a different image.';
+    } else if (error.toString().contains('storage/unauthorized')) {
+      message = 'Storage access denied. Please try signing in again.';
+    }
+
+    _showErrorSnackBar(message);
+  }
+
+// Method to compress image before upload (optional enhancement)
+  Future<File> _compressImage(File imageFile) async {
+    try {
+      // Read the image
+      final bytes = await imageFile.readAsBytes();
+      final image = img.decodeImage(bytes);
+
+      if (image == null) return imageFile;
+
+      // Resize image to max 512x512 while maintaining aspect ratio
+      final resized = img.copyResize(
+        image,
+        width: 512,
+        height: 512,
+        interpolation: img.Interpolation.linear,
+      );
+
+      // Compress as JPEG with 85% quality
+      final compressedBytes = img.encodeJpg(resized, quality: 85);
+
+      // Create a temporary file for the compressed image
+      final tempDir = Directory.systemTemp;
+      final tempFile = File(
+          '${tempDir.path}/compressed_${DateTime.now().millisecondsSinceEpoch}.jpg');
+      await tempFile.writeAsBytes(compressedBytes);
+
+      return tempFile;
+    } catch (e) {
+      debugPrint('Error compressing image: $e');
+      return imageFile; // Return original if compression fails
+    }
+  }
+
+// Method to show confirmation dialog for profile changes
+  Future<bool> _showUnsavedChangesDialog() async {
+    if (!_isEditing) return true;
+
+    final hasChanges = _nameController.text.trim() !=
+            (ref.read(currentUserProvider)?.displayName ?? '') ||
+        _bioController.text.trim() !=
+            'Exploring the world through AI vision'; // You might want to track original bio
+
+    if (!hasChanges) return true;
+
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            backgroundColor: Theme.of(context).colorScheme.surface,
+            title: Text(
+              'Unsaved Changes',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            content: Text(
+              'You have unsaved changes to your profile. Are you sure you want to leave without saving?',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text(
+                  'Cancel',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text(
+                  'Leave',
+                  style: TextStyle(
+                    color: AppTheme.errorColor,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ) ??
+        false;
   }
 
   void _showSignOutDialog() {

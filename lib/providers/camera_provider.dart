@@ -4,9 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:camera/camera.dart';
 import '../models/camera_state.dart';
+import '../services/image_quality_manager.dart';
+import 'premium_provider.dart';
 
 class CameraNotifier extends StateNotifier<CameraState> {
-  CameraNotifier(List<CameraDescription> cameras)
+  final Ref ref;
+  final ImageQualityManager _qualityManager = ImageQualityManager();
+
+  CameraNotifier(this.ref, List<CameraDescription> cameras)
       : super(CameraState(cameras: cameras));
 
   Future<void> initializeCamera() async {
@@ -31,7 +36,6 @@ class CameraNotifier extends StateNotifier<CameraState> {
   }
 
   Future<void> _prepareCamera() async {
-    // Dispose existing controller if any
     if (state.controller != null) {
       try {
         await state.controller!.dispose();
@@ -41,16 +45,20 @@ class CameraNotifier extends StateNotifier<CameraState> {
     }
 
     try {
+      // ✅ now ref is available
+      final isPremium = ref.read(premiumProvider).isPremium;
+
+      final preset = _qualityManager.getResolutionPreset(isPremium);
+
       final controller = CameraController(
         state.cameras[state.selectedCameraIndex],
-        ResolutionPreset.high,
+        preset,
         enableAudio: false,
         imageFormatGroup: ImageFormatGroup.jpeg,
       );
 
       await controller.initialize();
 
-      // Check if still mounted before updating state
       if (mounted) {
         state = state.copyWith(
           controller: controller,
@@ -58,7 +66,6 @@ class CameraNotifier extends StateNotifier<CameraState> {
           errorMessage: null,
         );
       } else {
-        // Dispose if widget was unmounted during initialization
         await controller.dispose();
       }
     } catch (e) {
@@ -279,8 +286,7 @@ class CameraNotifier extends StateNotifier<CameraState> {
 // Provider definition with better error handling
 final cameraProvider =
     StateNotifierProvider<CameraNotifier, CameraState>((ref) {
-  // This should be initialized with the cameras from main.dart
-  return CameraNotifier([]);
+  return CameraNotifier(ref, []); // ✅ pass ref
 });
 
 // Helper providers for camera state

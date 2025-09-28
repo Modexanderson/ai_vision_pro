@@ -1,3 +1,4 @@
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -17,6 +18,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseStorage _storage = FirebaseStorage.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn();
 
   Future<void> _initialize() async {
@@ -32,7 +34,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       if (firebaseUser != null) {
         try {
           await _createOrUpdateUserDocument(firebaseUser);
-          final appUser = AppUser.fromFirebaseUser(firebaseUser);
+          final appUser = await _buildAppUserFromFirebase(firebaseUser);
           await _cacheUserData(appUser);
 
           state = state.copyWith(
@@ -53,7 +55,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
           if (user != null) {
             try {
               await _createOrUpdateUserDocument(user);
-              final appUser = AppUser.fromFirebaseUser(user);
+              final appUser = await _buildAppUserFromFirebase(user);
               await _cacheUserData(appUser);
 
               state = state.copyWith(
@@ -86,6 +88,66 @@ class AuthNotifier extends StateNotifier<AuthState> {
         isLoading: false,
         error: 'Failed to initialize authentication: ${e.toString()}',
       );
+    }
+  }
+
+  // Enhanced method to build AppUser with Firestore data
+  Future<AppUser> _buildAppUserFromFirebase(User firebaseUser) async {
+    try {
+      // Get additional user data from Firestore
+      final userDoc =
+          await _firestore.collection('users').doc(firebaseUser.uid).get();
+
+      String provider = 'email';
+      if (firebaseUser.providerData.isNotEmpty) {
+        switch (firebaseUser.providerData.first.providerId) {
+          case 'google.com':
+            provider = 'google';
+            break;
+          case 'apple.com':
+            provider = 'apple';
+            break;
+          case 'password':
+            provider = 'email';
+            break;
+        }
+      }
+      if (firebaseUser.isAnonymous) provider = 'anonymous';
+
+      // Create base AppUser
+      var appUser = AppUser(
+        id: firebaseUser.uid,
+        email: firebaseUser.email,
+        displayName: firebaseUser.displayName,
+        photoURL: firebaseUser.photoURL,
+        isAnonymous: firebaseUser.isAnonymous,
+        createdAt: firebaseUser.metadata.creationTime ?? DateTime.now(),
+        lastSignIn: firebaseUser.metadata.lastSignInTime ?? DateTime.now(),
+        provider: provider,
+      );
+
+      // If Firestore document exists, merge additional data
+      if (userDoc.exists) {
+        final data = userDoc.data() as Map<String, dynamic>;
+
+        // Override with Firestore data if available
+        appUser = AppUser(
+          id: appUser.id,
+          email: appUser.email,
+          displayName: data['displayName'] ?? appUser.displayName,
+          photoURL: data['photoURL'] ?? appUser.photoURL,
+          isAnonymous: appUser.isAnonymous,
+          createdAt: appUser.createdAt,
+          lastSignIn: appUser.lastSignIn,
+          provider: appUser.provider,
+        );
+      }
+
+      return appUser;
+    } catch (e) {
+      debugPrint('Error building AppUser: $e');
+      // Fallback to basic AppUser if Firestore fails
+      return AppUser.fromFirebaseUser(firebaseUser);
     }
   }
 
@@ -444,7 +506,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  Future<void> updateProfile({String? displayName, String? photoURL}) async {
+  // Enhanced updateProfile method
+  Future<void> updateProfile({
+    String? displayName,
+    String? photoURL,
+    File? photoFile,
+    String? bio,
+    Map<String, dynamic>? additionalData,
+  }) async {
     if (state.user == null) return;
 
     state = state.copyWith(isLoading: true, error: null);
@@ -452,29 +521,142 @@ class AuthNotifier extends StateNotifier<AuthState> {
     try {
       final user = _firebaseAuth.currentUser!;
 
-      if (displayName != null) {
+      String? finalPhotoURL = photoURL;
+
+      // Upload photo if file is provided
+      if (photoFile != null) {
+        finalPhotoURL = await _uploadProfileImage(photoFile, user.uid);
+      }
+
+      // Update Firebase Auth profile
+      if (displayName != null || finalPhotoURL != null) {
         await user.updateDisplayName(displayName);
+        if (finalPhotoURL != null) {
+          await user.updatePhotoURL(finalPhotoURL);
+        }
       }
 
-      if (photoURL != null) {
-        await user.updatePhotoURL(photoURL);
+      // Prepare Firestore update data
+      Map<String, dynamic> firestoreUpdates = {
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      if (displayName != null) {
+        firestoreUpdates['displayName'] = displayName;
       }
 
+      if (finalPhotoURL != null) {
+        firestoreUpdates['photoURL'] = finalPhotoURL;
+      }
+
+      if (bio != null) {
+        firestoreUpdates['profile.bio'] = bio;
+      }
+
+      if (additionalData != null) {
+        firestoreUpdates.addAll(additionalData);
+      }
+
+      // Update Firestore document
+      await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .update(firestoreUpdates);
+
+      // Reload user and update state
       await user.reload();
       final updatedUser = _firebaseAuth.currentUser!;
-      await _createOrUpdateUserDocument(updatedUser);
-      final appUser = AppUser.fromFirebaseUser(updatedUser);
+      final appUser = await _buildAppUserFromFirebase(updatedUser);
       await _cacheUserData(appUser);
 
       state = state.copyWith(
         user: appUser,
         isLoading: false,
       );
+
+      debugPrint('Profile updated successfully');
     } catch (e) {
+      debugPrint('Failed to update profile: $e');
       state = state.copyWith(
         isLoading: false,
         error: 'Failed to update profile: ${e.toString()}',
       );
+      rethrow;
+    }
+  }
+
+  // Method to upload profile image to Firebase Storage
+  Future<String> _uploadProfileImage(File imageFile, String userId) async {
+    try {
+      final fileName =
+          'profile_${userId}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final storageRef = _storage.ref().child('profile_images').child(fileName);
+
+      // Delete old profile image if exists
+      try {
+        final oldImageRef = _storage.ref().child('profile_images');
+        final listResult = await oldImageRef.listAll();
+
+        for (final item in listResult.items) {
+          if (item.name.startsWith('profile_$userId')) {
+            await item.delete();
+            debugPrint('Deleted old profile image: ${item.name}');
+          }
+        }
+      } catch (e) {
+        debugPrint('Could not delete old profile images: $e');
+        // Continue anyway, old images won't break anything
+      }
+
+      // Upload new image
+      final uploadTask = storageRef.putFile(
+        imageFile,
+        SettableMetadata(
+          contentType: 'image/jpeg',
+          customMetadata: {
+            'userId': userId,
+            'uploadedAt': DateTime.now().toIso8601String(),
+          },
+        ),
+      );
+
+      final snapshot = await uploadTask.whenComplete(() => null);
+
+      if (snapshot.state == TaskState.success) {
+        final downloadURL = await storageRef.getDownloadURL();
+        debugPrint('Profile image uploaded successfully: $downloadURL');
+        return downloadURL;
+      } else {
+        throw Exception('Upload failed with state: ${snapshot.state}');
+      }
+    } catch (e) {
+      debugPrint('Error uploading profile image: $e');
+      rethrow;
+    }
+  }
+
+  // Method to update user profile data in Firestore only
+  Future<void> updateUserProfileData(Map<String, dynamic> updates) async {
+    if (state.user == null) return;
+
+    try {
+      updates['updatedAt'] = FieldValue.serverTimestamp();
+
+      await _firestore.collection('users').doc(state.user!.id).update(updates);
+
+      // Refresh user data
+      final currentUser = _firebaseAuth.currentUser;
+      if (currentUser != null) {
+        final appUser = await _buildAppUserFromFirebase(currentUser);
+        await _cacheUserData(appUser);
+
+        state = state.copyWith(user: appUser);
+      }
+
+      debugPrint('User profile data updated successfully');
+    } catch (e) {
+      debugPrint('Error updating user profile data: $e');
+      rethrow;
     }
   }
 

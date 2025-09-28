@@ -288,15 +288,15 @@ copies of the Software...
 
 ## 📞 Support & Contact
 
-- **📧 Email**: support@aivisionpro.com
-- **🐛 Issues**: [GitHub Issues](https://github.com/yourusername/ai_vision_pro/issues)
-- **💬 Discussions**: [GitHub Discussions](https://github.com/yourusername/ai_vision_pro/discussions)
+- **📧 Email**: aivisionproapp@gmail.com
+- **🐛 Issues**: [GitHub Issues](https://github.com/modexanderson/ai_vision_pro/issues)
+- **💬 Discussions**: [GitHub Discussions](https://github.com/modexanderson/ai_vision_pro/discussions)
 - **📱 Twitter**: [@AIVisionPro](https://twitter.com/aivisionpro)
-- **🌐 Website**: [www.aivisionpro.com](https://www.aivisionpro.com)
+- **🌐 Website**: [https://balanced-meal-app-65cb1.web.app/](https://balanced-meal-app-65cb1.web.app/)
 
 ## 🌟 Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=yourusername/ai_vision_pro&type=Date)](https://star-history.com/#yourusername/ai_vision_pro&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=modexanderson/ai_vision_pro&type=Date)](https://star-history.com/#modexanderson/ai_vision_pro&Date)
 
 ---
 
@@ -304,6 +304,6 @@ copies of the Software...
 
 **Made with ❤️ by the AI Vision Pro Team**
 
-[⭐ Star this repo](https://github.com/yourusername/ai_vision_pro) • [🍴 Fork it](https://github.com/yourusername/ai_vision_pro/fork) • [📢 Share it](https://twitter.com/intent/tweet?text=Check%20out%20AI%20Vision%20Pro%20-%20The%20most%20advanced%20AI%20visual%20recognition%20app!&url=https://github.com/yourusername/ai_vision_pro)
+[⭐ Star this repo](https://github.com/yourusername/ai_vision_pro) • [🍴 Fork it](https://github.com/yourusername/ai_vision_pro/fork) • [📢 Share it](https://twitter.com/intent/tweet?text=Check%20out%20AI%20Vision%20Pro%20-%20The%20most%20advanced%20AI%20visual%20recognition%20app!&url=https://github.com/modexanderson/ai_vision_pro)
 
 </div>

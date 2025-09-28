@@ -62,5 +62,7 @@
 		<string>This app needs camera access to detect objects</string>
 		<key>NSMicrophoneUsageDescription</key>
 		<string>This app needs microphone access for voice commands</string>
+		<key>NSDocumentsDirectoryUsageDescription</key>
+		<string>This app needs access to documents directory to export detection history.</string>
 	</dict>
 </plist>

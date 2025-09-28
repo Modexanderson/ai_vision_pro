@@ -1,7 +1,7 @@
+// screens/settings_screen.dart
 
 import 'dart:io';
 
-import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,6 +16,11 @@ import '../providers/auth_provider.dart';
 import '../providers/premium_provider.dart';
 import '../config/app_theme.dart';
 import '../providers/theme_provider.dart';
+import '../services/auto_save_service.dart';
+import '../services/image_quality_manager.dart';
+import '../services/push_notification_service.dart';
+import '../utils/haptic_feedback.dart';
+import '../utils/sound_manager.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -28,6 +33,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     with TickerProviderStateMixin {
   late AnimationController _slideController;
   late AnimationController _fadeController;
+
+  // Add service instances
+  late final PushNotificationService _notificationService;
+  late final SoundManager _soundManager;
+  late final HapticFeedbackUtil _hapticService;
+  late final ImageQualityManager _imageQualityManager;
+  late final AutoSaveService _autoSaveService;
 
   // Settings State
   bool _notificationsEnabled = true;
@@ -47,6 +59,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   @override
   void initState() {
     super.initState();
+    // Initialize service instances
+    _notificationService = PushNotificationService();
+    _soundManager = SoundManager();
+    _hapticService = HapticFeedbackUtil();
+    _imageQualityManager = ImageQualityManager();
+    _autoSaveService = AutoSaveService();
     _initializeAnimations();
     _loadSettings();
     _loadAppInfo();
@@ -118,6 +136,36 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         prefs.setString('language', _language),
         prefs.setString('theme', _theme),
       ]);
+
+      // Connect settings to actual services
+      if (_notificationsEnabled != null) {
+        await _notificationService
+            .setNotificationsEnabled(_notificationsEnabled);
+      }
+
+      if (_soundEnabled != null) {
+        await _soundManager.setSoundEnabled(_soundEnabled);
+      }
+
+      if (_hapticEnabled != null) {
+        await _hapticService.setHapticEnabled(_hapticEnabled);
+      }
+
+      if (_highQuality != null) {
+        final isPremium = ref.read(premiumProvider).isPremium;
+        try {
+          await _imageQualityManager.setHighQualityEnabled(
+              _highQuality, isPremium);
+        } catch (e) {
+          // Show premium required dialog
+          _showPremiumRequired();
+          setState(() => _highQuality = false);
+        }
+      }
+
+      if (_autoSave != null) {
+        await _autoSaveService.setAutoSaveEnabled(_autoSave);
+      }
     } catch (e) {
       _showErrorSnackBar('Failed to save settings: $e');
     }
@@ -214,10 +262,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 _buildSettingsCard([
                   _buildSwitchTile(
                     'High Quality Images',
-                    'Capture in maximum resolution',
+                    isPremium
+                        ? 'Capture in maximum resolution (Premium)'
+                        : 'Capture in maximum resolution - Premium Required',
                     Icons.hd_rounded,
-                    _highQuality,
-                    (value) => _updateSetting(() => _highQuality = value),
+                    isPremium ? _highQuality : false,
+                    (value) {
+                      if (!isPremium && value) {
+                        _showPremiumRequired();
+                        return;
+                      }
+                      _updateSetting(() => _highQuality = value);
+
+                      // Show helpful feedback
+                      _hapticService.toggleSwitch();
+                      if (value && isPremium) {
+                        _showSuccessSnackBar(
+                            'High quality mode enabled. Images will be larger but more detailed.');
+                      }
+                    },
                     theme,
                     badge: isPremium ? null : 'PRO',
                   ),
@@ -261,23 +324,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                     (value) => _updateTheme(value!),
                     theme,
                   ),
-                  _buildDivider(theme),
-                  _buildDropdownTile(
-                    'Language',
-                    'Select your preferred language',
-                    Icons.language_rounded,
-                    _language,
-                    [
-                      'English',
-                      'Spanish',
-                      'French',
-                      'German',
-                      'Chinese',
-                      'Japanese'
-                    ],
-                    (value) => _updateLanguage(value!),
-                    theme,
-                  ),
+                  // _buildDivider(theme),
+                  // _buildDropdownTile(
+                  //   'Language',
+                  //   'Select your preferred language',
+                  //   Icons.language_rounded,
+                  //   _language,
+                  //   [
+                  //     'English',
+                  //     'Spanish',
+                  //     'French',
+                  //     'German',
+                  //     'Chinese',
+                  //     'Japanese'
+                  //   ],
+                  //   (value) => _updateLanguage(value!),
+                  //   theme,
+                  // ),
                 ], theme)
                     .animate(delay: 800.ms)
                     .slideY(begin: 0.3)
@@ -347,14 +410,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                     () => _contactSupport(),
                     theme,
                   ),
-                  _buildDivider(theme),
-                  _buildTapTile(
-                    'Rate App',
-                    'Share your experience with others',
-                    Icons.star_rate_rounded,
-                    () => _rateApp(),
-                    theme,
-                  ),
+                  // _buildDivider(theme),
+                  // _buildTapTile(
+                  //   'Rate App',
+                  //   'Share your experience with others',
+                  //   Icons.star_rate_rounded,
+                  //   () => _rateApp(),
+                  //   theme,
+                  // ),
                 ], theme)
                     .animate(delay: 1200.ms)
                     .slideY(begin: 0.3)
@@ -784,6 +847,81 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         boxShadow: AppTheme.getElevationShadow(context, 2),
       ),
       child: Column(children: children),
+    );
+  }
+
+  void _showPremiumRequired() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: Row(
+          children: [
+            const Icon(
+              Icons.diamond_rounded,
+              color: AppTheme.premiumGold,
+              size: 24,
+            ),
+            const SizedBox(width: 12),
+            Text(
+              'Premium Required',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+          ],
+        ),
+        content: Text(
+          'This feature requires a premium subscription. Upgrade now to unlock advanced AI capabilities.',
+          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                height: 1.5,
+              ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Later',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          Container(
+            decoration: BoxDecoration(
+              gradient: AppTheme.premiumGradient,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                Navigator.pushNamed(context, '/premium');
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
+              ),
+              child: const Text(
+                'Upgrade',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -2489,7 +2627,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   }
 
   void _openHelpCenter() async {
-    final url = Uri.parse('https://help.aivisionpro.com');
+    final url = Uri.parse('https://balanced-meal-app-65cb1.web.app/support');
     try {
       if (await canLaunchUrl(url)) {
         await launchUrl(url, mode: LaunchMode.externalApplication);
@@ -2649,7 +2787,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   void _openEmailSupport() async {
     final emailUri = Uri(
       scheme: 'mailto',
-      path: 'support@aivisionpro.com',
+      path: 'aivisionproapp@gmail.com',
       query:
           'subject=AI Vision Pro Support Request&body=Please describe your issue:',
     );

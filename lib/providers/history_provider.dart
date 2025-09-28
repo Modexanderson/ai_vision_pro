@@ -82,6 +82,26 @@ class HistoryNotifier extends StateNotifier<List<DetectionHistory>> {
     }
   }
 
+  Future<void> addFromAutoSave(DetectionHistory history) async {
+    try {
+      // Add directly to state without saving again (since AutoSaveService already saved)
+      state = [history, ...state];
+
+      // Update analytics too
+      final analyticsNotifier = _ref.read(analyticsProvider.notifier);
+      analyticsNotifier.trackDetection(
+        history.mode ?? CameraMode.object,
+        history.detectedObjects.length,
+        detectedObjects: history.detectedObjects,
+        confidence: history.averageConfidence,
+      );
+
+      debugPrint('History updated from AutoSave: ${history.id}');
+    } catch (e) {
+      debugPrint('Error adding from AutoSave: $e');
+    }
+  }
+
   // New method to update analytics when a detection is saved
   void _updateAnalyticsForNewDetection(DetectionHistory history) {
     try {

@@ -25,7 +25,7 @@ dependencies:
   camera: ^0.10.5+5
   image_picker: ^1.0.4
   image: ^4.3.0
-  flutter_image_compress: ^2.1.0
+  flutter_image_compress: ^2.4.0
   path_provider: ^2.1.5
   
   # AI & ML
@@ -75,7 +75,7 @@ dependencies:
   
   # Utils
   uuid: ^4.2.1
-  intl: ^0.18.1
+  intl: ^0.20.2
   permission_handler: ^11.1.0
   device_info_plus: ^9.1.1
   package_info_plus: ^4.2.0
@@ -97,6 +97,12 @@ dependencies:
   pdf: ^3.11.3
   csv: ^6.0.0
   open_file: ^3.5.10
+  firebase_messaging: ^15.2.10
+  flutter_local_notifications: ^19.4.2
+  timezone: ^0.10.1
+  audioplayers: ^6.5.1
+  archive: ^3.6.1
+  path: ^1.9.1
 
 dev_dependencies:
   flutter_test:

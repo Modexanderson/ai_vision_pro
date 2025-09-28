@@ -517,7 +517,7 @@ class _BillingManagementSheetState
     Navigator.pop(context);
     HapticFeedback.lightImpact();
 
-    const email = 'support@aivisionpro.com';
+    const email = 'aivisionproapp@gmail.com';
     const subject = 'Billing Support Request';
 
     // Get current subscription info for context

@@ -1,11 +1,13 @@
 // screens/auth_screen.dart
 
 import 'dart:io';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/auth_state.dart';
 import '../providers/auth_provider.dart';
 import '../config/app_theme.dart';
@@ -794,6 +796,16 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                         decoration: TextDecoration.underline,
                         fontWeight: FontWeight.w600,
                       ),
+                      recognizer: TapGestureRecognizer()
+                        ..onTap = () async {
+                          final url = Uri.parse(
+                            'https://balanced-meal-app-65cb1.web.app/terms',
+                          );
+                          if (await canLaunchUrl(url)) {
+                            await launchUrl(url,
+                                mode: LaunchMode.externalApplication);
+                          }
+                        },
                     ),
                     const TextSpan(text: ' and '),
                     TextSpan(
@@ -803,6 +815,16 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                         decoration: TextDecoration.underline,
                         fontWeight: FontWeight.w600,
                       ),
+                      recognizer: TapGestureRecognizer()
+                        ..onTap = () async {
+                          final url = Uri.parse(
+                            'https://balanced-meal-app-65cb1.web.app/privacy',
+                          );
+                          if (await canLaunchUrl(url)) {
+                            await launchUrl(url,
+                                mode: LaunchMode.externalApplication);
+                          }
+                        },
                     ),
                   ],
                 ),

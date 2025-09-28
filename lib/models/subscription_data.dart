@@ -1,7 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-import '../services/subscription_service.dart';
-
 class SubscriptionData {
   final String userId;
   final String productId;

@@ -1,11 +1,17 @@
 // screens/history_screen.dart
 
+import 'dart:convert';
 import 'dart:io';
+import 'package:csv/csv.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:permission_handler/permission_handler.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../models/detection_history.dart';
@@ -1541,7 +1547,8 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen>
     );
   }
 
-  void _performExport(DetectionHistory item, String format, ThemeData theme) {
+  void _performExport(
+      DetectionHistory item, String format, ThemeData theme) async {
     Navigator.pop(context);
 
     // Show export progress
@@ -1571,44 +1578,93 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen>
       ),
     );
 
-    // Simulate export process
-    Future.delayed(const Duration(seconds: 2), () {
-      Navigator.pop(context);
+    try {
+      String? filePath;
+
+      switch (format) {
+        case 'PDF':
+          filePath = await _exportToPDF(item);
+          break;
+        case 'CSV':
+          filePath = await _exportToCSV([item]);
+          break;
+        case 'JSON':
+          filePath = await _exportToJSON([item]);
+          break;
+      }
+
+      Navigator.pop(context); // Close progress dialog
+
+      if (filePath != null) {
+        // Show success and share option
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(
+                  Icons.check_circle_rounded,
+                  color: theme.colorScheme.onPrimary,
+                  size: 20,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Detection exported as $format successfully',
+                    style: TextStyle(
+                      color: theme.colorScheme.onPrimary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: AppTheme.successColor,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            margin: const EdgeInsets.all(16),
+            action: SnackBarAction(
+              label: 'Share',
+              textColor: theme.colorScheme.onPrimary,
+              onPressed: () => _shareFile(filePath!),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      Navigator.pop(context); // Close progress dialog
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Row(
             children: [
               Icon(
-                Icons.check_circle_rounded,
-                color: theme.colorScheme.onPrimary,
+                Icons.error_rounded,
+                color: theme.colorScheme.onError,
                 size: 20,
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  'Detection exported as $format successfully',
+                  'Export failed: ${e.toString()}',
                   style: TextStyle(
-                    color: theme.colorScheme.onPrimary,
+                    color: theme.colorScheme.onError,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
               ),
             ],
           ),
-          backgroundColor: AppTheme.successColor,
+          backgroundColor: theme.colorScheme.error,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
           margin: const EdgeInsets.all(16),
-          action: SnackBarAction(
-            label: 'Share',
-            textColor: theme.colorScheme.onPrimary,
-            onPressed: () => _shareHistoryItem(item),
-          ),
         ),
       );
-    });
+    }
   }
 
   void _deleteHistoryItem(DetectionHistory item, ThemeData theme) {
@@ -1813,6 +1869,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen>
 
   void _exportHistory() {
     final historyList = ref.read(historyProvider);
+    final isPremium = ref.watch(premiumProvider).isPremium;
     final theme = Theme.of(context);
 
     if (historyList.isEmpty) {
@@ -1846,14 +1903,208 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen>
       return;
     }
 
+    // For premium users, show export options directly
+    if (isPremium) {
+      _showExportOptions(theme);
+    } else {
+      // For free users, show ad-supported export
+      _showAdSupportedExport(theme);
+    }
+  }
+
+  void _showAdSupportedExport(ThemeData theme) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      isScrollControlled: true, // KEY FIX: Allow custom sizing
+      isScrollControlled: true,
+      builder: (context) => Container(
+        height: MediaQuery.of(context).size.height * 0.5,
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          boxShadow: AppTheme.getElevationShadow(context, 8),
+        ),
+        child: Column(
+          children: [
+            // Handle
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(top: 12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.outline.withOpacity(0.4),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+
+            // Header
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: [
+                  const Icon(
+                    Icons.download_rounded,
+                    size: 48,
+                    color: AppTheme.warningColor,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Export History',
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Watch an ad to export your entire detection history',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+
+            // Ad-supported export button
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    RewardedAdButton(
+                      featureName: 'Export All History',
+                      onRewardEarned: () {
+                        Navigator.pop(context);
+                        _showExportOptions(theme);
+                      },
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 16,
+                        ),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              AppTheme.warningColor,
+                              AppTheme.warningColor.withOpacity(0.8),
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: AppTheme.getElevationShadow(context, 4),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(
+                              Icons.play_circle_filled_rounded,
+                              color: Colors.white,
+                              size: 24,
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              'Watch Ad to Export',
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    // Premium upgrade option
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surfaceContainerHighest
+                            .withOpacity(0.5),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: theme.colorScheme.outline.withOpacity(0.3),
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.star_rounded,
+                                color: AppTheme.primaryColor,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Upgrade to Premium',
+                                style: theme.textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: theme.colorScheme.onSurface,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Export unlimited history without ads',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton(
+                              onPressed: () {
+                                Navigator.pop(context);
+                                Navigator.pushNamed(context, '/premium');
+                              },
+                              style: OutlinedButton.styleFrom(
+                                side: const BorderSide(
+                                    color: AppTheme.primaryColor),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: const Text(
+                                'Learn More',
+                                style: TextStyle(
+                                  color: AppTheme.primaryColor,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showExportOptions(ThemeData theme) {
+    final historyList = ref.read(historyProvider);
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.6, // Start at 60% of screen height
-        minChildSize: 0.4, // Minimum 40% of screen height
-        maxChildSize: 0.8, // Maximum 80% of screen height
+        initialChildSize: 0.6,
+        minChildSize: 0.4,
+        maxChildSize: 0.8,
         builder: (context, scrollController) => Container(
           decoration: BoxDecoration(
             color: theme.colorScheme.surface,
@@ -1861,7 +2112,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen>
             boxShadow: AppTheme.getElevationShadow(context, 8),
           ),
           child: Column(
-            mainAxisSize: MainAxisSize.min, // KEY FIX: Use minimum space
+            mainAxisSize: MainAxisSize.min,
             children: [
               // Handle
               Container(
@@ -1876,8 +2127,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen>
 
               // Header
               Padding(
-                padding:
-                    const EdgeInsets.fromLTRB(20, 16, 20, 8), // Reduced padding
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
                 child: Text(
                   'Export All History (${historyList.length} items)',
                   style: theme.textTheme.headlineSmall?.copyWith(
@@ -1903,7 +2153,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen>
                         onTap: () => _performBulkExport('PDF', theme),
                         theme: theme,
                       ),
-                      const SizedBox(height: 8), // Add spacing between options
+                      const SizedBox(height: 8),
                       _buildExportOption(
                         icon: Icons.table_chart_rounded,
                         color: AppTheme.successColor,
@@ -1930,8 +2180,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen>
                         onTap: () => _performBulkExport('ZIP', theme),
                         theme: theme,
                       ),
-                      const SizedBox(
-                          height: 20), // Bottom padding for safe area
+                      const SizedBox(height: 20),
                     ],
                   ),
                 ),
@@ -1943,9 +2192,9 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen>
     );
   }
 
-  void _performBulkExport(String format, ThemeData theme) {
+  void _performBulkExport(String format, ThemeData theme) async {
     Navigator.pop(context);
-    final historyCount = ref.read(historyProvider).length;
+    final historyList = ref.read(historyProvider);
 
     showDialog(
       context: context,
@@ -1963,7 +2212,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen>
             ),
             const SizedBox(height: 16),
             Text(
-              'Exporting $historyCount detections as $format...',
+              'Exporting ${historyList.length} detections as $format...',
               style: theme.textTheme.bodyLarge?.copyWith(
                 color: theme.colorScheme.onSurface,
                 fontWeight: FontWeight.w500,
@@ -1983,74 +2232,535 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen>
       ),
     );
 
-    // Simulate export process with longer delay for bulk export
-    Future.delayed(const Duration(seconds: 4), () {
-      Navigator.pop(context);
+    try {
+      String? filePath;
+
+      switch (format) {
+        case 'PDF':
+          filePath = await _exportBulkToPDF(historyList);
+          break;
+        case 'CSV':
+          filePath = await _exportToCSV(historyList);
+          break;
+        case 'JSON':
+          filePath = await _exportToJSON(historyList);
+          break;
+        case 'ZIP':
+          filePath = await _exportToZIP(historyList);
+          break;
+      }
+
+      Navigator.pop(context); // Close progress dialog
+
+      if (filePath != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(
+                  Icons.check_circle_rounded,
+                  color: theme.colorScheme.onPrimary,
+                  size: 20,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    '${historyList.length} detections exported as $format successfully',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: AppTheme.successColor,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            margin: const EdgeInsets.all(16),
+            duration: const Duration(seconds: 4),
+            action: SnackBarAction(
+              label: 'Share',
+              textColor: theme.colorScheme.onPrimary,
+              onPressed: () => _shareFile(filePath!),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      Navigator.pop(context); // Close progress dialog
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Row(
             children: [
               Icon(
-                Icons.check_circle_rounded,
-                color: theme.colorScheme.onPrimary,
+                Icons.error_rounded,
+                color: theme.colorScheme.onError,
                 size: 20,
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  '$historyCount detections exported as $format successfully',
-                  style: const TextStyle(
-                    color: Colors.white,
+                  'Bulk export failed: ${e.toString()}',
+                  style: TextStyle(
+                    color: theme.colorScheme.onError,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
               ),
             ],
           ),
-          backgroundColor: AppTheme.successColor,
+          backgroundColor: theme.colorScheme.error,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
           margin: const EdgeInsets.all(16),
-          duration: const Duration(seconds: 4),
-          action: SnackBarAction(
-            label: 'Share',
-            textColor: theme.colorScheme.onPrimary,
-            onPressed: () {
-              // Implement sharing logic for bulk export
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Row(
-                    children: [
-                      Icon(
-                        Icons.share_rounded,
-                        color: theme.colorScheme.onPrimary,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 12),
-                      const Text(
-                        'Opening share dialog...',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w500,
+        ),
+      );
+    }
+  }
+
+// Add these helper methods for actual file export functionality
+
+  Future<String?> _exportToPDF(DetectionHistory item) async {
+    try {
+      // Request storage permission
+      if (await Permission.storage.request().isGranted ||
+          await Permission.manageExternalStorage.request().isGranted) {
+        final pdf = pw.Document();
+
+        // Load image if it exists
+        pw.ImageProvider? imageProvider;
+        if (File(item.imagePath).existsSync()) {
+          final imageBytes = await File(item.imagePath).readAsBytes();
+          imageProvider = pw.MemoryImage(imageBytes);
+        }
+
+        pdf.addPage(
+          pw.Page(
+            pageFormat: PdfPageFormat.a4,
+            build: (pw.Context context) {
+              return pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  // Header
+                  pw.Container(
+                    padding: const pw.EdgeInsets.all(20),
+                    decoration: pw.BoxDecoration(
+                      color: PdfColors.blue50,
+                      borderRadius: pw.BorderRadius.circular(10),
+                    ),
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          'AI Vision Detection Report',
+                          style: pw.TextStyle(
+                            fontSize: 24,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.blue800,
+                          ),
                         ),
+                        pw.SizedBox(height: 10),
+                        pw.Text(
+                          'Generated on ${DateFormat('MMM d, y - h:mm a').format(DateTime.now())}',
+                          style: const pw.TextStyle(
+                              fontSize: 12, color: PdfColors.grey600),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  pw.SizedBox(height: 30),
+
+                  // Detection Details
+                  pw.Text(
+                    'Detection Details',
+                    style: pw.TextStyle(
+                        fontSize: 18, fontWeight: pw.FontWeight.bold),
+                  ),
+                  pw.SizedBox(height: 15),
+
+                  // Image if available
+                  if (imageProvider != null) ...[
+                    pw.Container(
+                      height: 200,
+                      width: double.infinity,
+                      decoration: pw.BoxDecoration(
+                        border: pw.Border.all(color: PdfColors.grey300),
+                        borderRadius: pw.BorderRadius.circular(8),
                       ),
+                      child: pw.ClipRRect(
+                        // borderRadius: pw.BorderRadius.circular(8),
+                        child: pw.Image(imageProvider, fit: pw.BoxFit.cover),
+                      ),
+                    ),
+                    pw.SizedBox(height: 20),
+                  ],
+
+                  // Detection Info Table
+                  pw.Table(
+                    border: pw.TableBorder.all(color: PdfColors.grey300),
+                    columnWidths: {
+                      0: const pw.FlexColumnWidth(1),
+                      1: const pw.FlexColumnWidth(2),
+                    },
+                    children: [
+                      _buildPdfTableRow(
+                          'Detection Time',
+                          DateFormat('MMM d, y - h:mm a')
+                              .format(item.timestamp)),
+                      _buildPdfTableRow(
+                          'Objects Detected', item.detectedObjects.join(', ')),
+                      _buildPdfTableRow('Number of Objects',
+                          '${item.detectedObjects.length}'),
+                      _buildPdfTableRow('Average Confidence',
+                          '${(item.averageConfidence * 100).toInt()}%'),
+                      _buildPdfTableRow('Detection Quality', item.qualityText),
+                      _buildPdfTableRow('Category', item.categoryText),
                     ],
                   ),
-                  backgroundColor: AppTheme.primaryColor,
-                  behavior: SnackBarBehavior.floating,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+
+                  pw.SizedBox(height: 30),
+
+                  // Objects List
+                  pw.Text(
+                    'Detected Objects',
+                    style: pw.TextStyle(
+                        fontSize: 16, fontWeight: pw.FontWeight.bold),
                   ),
-                  margin: const EdgeInsets.all(16),
+                  pw.SizedBox(height: 10),
+
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: item.detectedObjects
+                        .map((object) => pw.Container(
+                              margin: const pw.EdgeInsets.only(bottom: 5),
+                              padding: const pw.EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 5),
+                              decoration: pw.BoxDecoration(
+                                color: PdfColors.grey100,
+                                borderRadius: pw.BorderRadius.circular(15),
+                              ),
+                              child: pw.Text('• $object',
+                                  style: const pw.TextStyle(fontSize: 12)),
+                            ))
+                        .toList(),
+                  ),
+
+                  pw.Spacer(),
+
+                  // Footer
+                  pw.Container(
+                    padding: const pw.EdgeInsets.all(10),
+                    decoration: pw.BoxDecoration(
+                      border: pw.Border.all(color: PdfColors.grey300),
+                      borderRadius: pw.BorderRadius.circular(5),
+                    ),
+                    child: pw.Text(
+                      'This report was generated by AI Vision Pro. For more information, visit our website.',
+                      style: const pw.TextStyle(
+                          fontSize: 10, color: PdfColors.grey600),
+                      textAlign: pw.TextAlign.center,
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+
+        // Save the PDF
+        final directory = await getApplicationDocumentsDirectory();
+        final file = File(
+            '${directory.path}/detection_${item.id}_${DateTime.now().millisecondsSinceEpoch}.pdf');
+        await file.writeAsBytes(await pdf.save());
+
+        return file.path;
+      } else {
+        throw Exception('Storage permission denied');
+      }
+    } catch (e) {
+      throw Exception('PDF export failed: $e');
+    }
+  }
+
+  Future<String?> _exportBulkToPDF(List<DetectionHistory> items) async {
+    try {
+      if (await Permission.storage.request().isGranted ||
+          await Permission.manageExternalStorage.request().isGranted) {
+        final pdf = pw.Document();
+
+        // Cover page
+        pdf.addPage(
+          pw.Page(
+            pageFormat: PdfPageFormat.a4,
+            build: (pw.Context context) {
+              return pw.Center(
+                child: pw.Column(
+                  mainAxisAlignment: pw.MainAxisAlignment.center,
+                  children: [
+                    pw.Text(
+                      'AI Vision Detection History',
+                      style: pw.TextStyle(
+                          fontSize: 32, fontWeight: pw.FontWeight.bold),
+                    ),
+                    pw.SizedBox(height: 20),
+                    pw.Text(
+                      'Complete Detection Report',
+                      style: const pw.TextStyle(
+                          fontSize: 18, color: PdfColors.grey600),
+                    ),
+                    pw.SizedBox(height: 40),
+                    pw.Container(
+                      padding: const pw.EdgeInsets.all(20),
+                      decoration: pw.BoxDecoration(
+                        color: PdfColors.blue50,
+                        borderRadius: pw.BorderRadius.circular(10),
+                      ),
+                      child: pw.Column(
+                        children: [
+                          pw.Text('Total Detections: ${items.length}',
+                              style: const pw.TextStyle(fontSize: 16)),
+                          pw.SizedBox(height: 5),
+                          pw.Text(
+                              'Generated: ${DateFormat('MMM d, y - h:mm a').format(DateTime.now())}',
+                              style: const pw.TextStyle(
+                                  fontSize: 12, color: PdfColors.grey600)),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               );
             },
           ),
+        );
+
+        // Add pages for each detection (limit to prevent huge files)
+        final limitedItems = items.take(50).toList(); // Limit to 50 items
+
+        for (int i = 0; i < limitedItems.length; i++) {
+          final item = limitedItems[i];
+
+          pdf.addPage(
+            pw.Page(
+              pageFormat: PdfPageFormat.a4,
+              build: (pw.Context context) {
+                return pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text(
+                      'Detection ${i + 1} of ${limitedItems.length}',
+                      style: pw.TextStyle(
+                          fontSize: 20, fontWeight: pw.FontWeight.bold),
+                    ),
+                    pw.SizedBox(height: 20),
+
+                    // Detection summary table
+                    pw.Table(
+                      border: pw.TableBorder.all(color: PdfColors.grey300),
+                      columnWidths: {
+                        0: const pw.FlexColumnWidth(1),
+                        1: const pw.FlexColumnWidth(2),
+                      },
+                      children: [
+                        _buildPdfTableRow(
+                            'Time',
+                            DateFormat('MMM d, y - h:mm a')
+                                .format(item.timestamp)),
+                        _buildPdfTableRow(
+                            'Objects', item.detectedObjects.join(', ')),
+                        _buildPdfTableRow('Confidence',
+                            '${(item.averageConfidence * 100).toInt()}%'),
+                        _buildPdfTableRow('Category', item.categoryText),
+                      ],
+                    ),
+                  ],
+                );
+              },
+            ),
+          );
+        }
+
+        // Save the PDF
+        final directory = await getApplicationDocumentsDirectory();
+        final file = File(
+            '${directory.path}/detection_history_${DateTime.now().millisecondsSinceEpoch}.pdf');
+        await file.writeAsBytes(await pdf.save());
+
+        return file.path;
+      } else {
+        throw Exception('Storage permission denied');
+      }
+    } catch (e) {
+      throw Exception('Bulk PDF export failed: $e');
+    }
+  }
+
+  pw.TableRow _buildPdfTableRow(String label, String value) {
+    return pw.TableRow(
+      children: [
+        pw.Container(
+          padding: const pw.EdgeInsets.all(8),
+          color: PdfColors.grey100,
+          child: pw.Text(label,
+              style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
         ),
+        pw.Container(
+          padding: const pw.EdgeInsets.all(8),
+          child: pw.Text(value),
+        ),
+      ],
+    );
+  }
+
+  Future<String?> _exportToCSV(List<DetectionHistory> items) async {
+    try {
+      if (await Permission.storage.request().isGranted ||
+          await Permission.manageExternalStorage.request().isGranted) {
+        // Prepare CSV data
+        List<List<dynamic>> rows = [
+          // Header row
+          [
+            'ID',
+            'Timestamp',
+            'Date',
+            'Time',
+            'Detected Objects',
+            'Object Count',
+            'Average Confidence (%)',
+            'Quality',
+            'Category',
+            'Image Path',
+            'Description'
+          ]
+        ];
+
+        // Add data rows
+        for (final item in items) {
+          rows.add([
+            item.id,
+            item.timestamp.toIso8601String(),
+            DateFormat('yyyy-MM-dd').format(item.timestamp),
+            DateFormat('HH:mm:ss').format(item.timestamp),
+            item.detectedObjects.join('; '),
+            item.detectedObjects.length,
+            (item.averageConfidence * 100).toInt(),
+            item.qualityText,
+            item.categoryText,
+            item.imagePath,
+            item.description,
+          ]);
+        }
+
+        // Convert to CSV string
+        final csvString = const ListToCsvConverter().convert(rows);
+
+        // Save the file
+        final directory = await getApplicationDocumentsDirectory();
+        final fileName = items.length == 1
+            ? 'detection_${items.first.id}_${DateTime.now().millisecondsSinceEpoch}.csv'
+            : 'detection_history_${DateTime.now().millisecondsSinceEpoch}.csv';
+        final file = File('${directory.path}/$fileName');
+        await file.writeAsString(csvString);
+
+        return file.path;
+      } else {
+        throw Exception('Storage permission denied');
+      }
+    } catch (e) {
+      throw Exception('CSV export failed: $e');
+    }
+  }
+
+  Future<String?> _exportToJSON(List<DetectionHistory> items) async {
+    try {
+      if (await Permission.storage.request().isGranted ||
+          await Permission.manageExternalStorage.request().isGranted) {
+        // Prepare JSON data
+        final exportData = {
+          'exportInfo': {
+            'timestamp': DateTime.now().toIso8601String(),
+            'version': '1.0',
+            'totalDetections': items.length,
+            'exportedBy': 'AI Vision Pro',
+          },
+          'detections': items.map((item) => item.exportData).toList(),
+        };
+
+        // Convert to JSON string with pretty formatting
+        final jsonString =
+            const JsonEncoder.withIndent('  ').convert(exportData);
+
+        // Save the file
+        final directory = await getApplicationDocumentsDirectory();
+        final fileName = items.length == 1
+            ? 'detection_${items.first.id}_${DateTime.now().millisecondsSinceEpoch}.json'
+            : 'detection_history_${DateTime.now().millisecondsSinceEpoch}.json';
+        final file = File('${directory.path}/$fileName');
+        await file.writeAsString(jsonString);
+
+        return file.path;
+      } else {
+        throw Exception('Storage permission denied');
+      }
+    } catch (e) {
+      throw Exception('JSON export failed: $e');
+    }
+  }
+
+  Future<String?> _exportToZIP(List<DetectionHistory> items) async {
+    try {
+      if (await Permission.storage.request().isGranted ||
+          await Permission.manageExternalStorage.request().isGranted) {
+        // For ZIP functionality, you'll need to add the 'archive' package to pubspec.yaml
+        // archive: ^3.4.0
+
+        // This is a placeholder - you would implement ZIP creation here
+        // using the archive package to compress JSON data and images together
+
+        final directory = await getApplicationDocumentsDirectory();
+        final fileName =
+            'detection_archive_${DateTime.now().millisecondsSinceEpoch}.zip';
+        final file = File('${directory.path}/$fileName');
+
+        // For now, just create the JSON file (you would add ZIP compression here)
+        final jsonPath = await _exportToJSON(items);
+        if (jsonPath != null) {
+          // Copy JSON file as ZIP placeholder
+          await File(jsonPath).copy(file.path);
+          return file.path;
+        }
+
+        throw Exception('ZIP creation failed');
+      } else {
+        throw Exception('Storage permission denied');
+      }
+    } catch (e) {
+      throw Exception('ZIP export failed: $e');
+    }
+  }
+
+  Future<void> _shareFile(String filePath) async {
+    try {
+      await Share.shareXFiles(
+        [XFile(filePath)],
+        text: 'AI Vision Detection Export',
+        subject: 'Detection Results',
       );
-    });
+    } catch (e) {
+      // Fallback to regular share if file sharing fails
+      final fileName = filePath.split('/').last;
+      await Share.share(
+        'Detection results exported as $fileName\n\nFile location: $filePath',
+        subject: 'Detection Results',
+      );
+    }
   }
 }
 

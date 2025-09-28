@@ -28,6 +28,11 @@ import 'screens/auth_screen.dart';
 import 'screens/main_navigation_screen.dart';
 import 'providers/camera_provider.dart';
 import 'providers/auth_provider.dart';
+import 'services/auto_save_service.dart';
+import 'services/image_quality_manager.dart';
+import 'services/push_notification_service.dart';
+import 'utils/haptic_feedback.dart';
+import 'utils/sound_manager.dart';
 
 List<CameraDescription> cameras = [];
 bool isFirebaseInitialized = false;
@@ -46,7 +51,7 @@ Future<void> main() async {
   runApp(
     ProviderScope(
       overrides: [
-        cameraProvider.overrideWith((ref) => CameraNotifier(cameras)),
+        cameraProvider.overrideWith((ref) => CameraNotifier(ref, cameras)),
       ],
       child: const AIVisionProApp(),
     ),
@@ -111,6 +116,14 @@ Future<void> _initializeServices() async {
     } catch (e) {
       debugPrint('⚠️ App config initialization failed: $e');
     }
+
+    // Initialize new services
+    await PushNotificationService().initialize();
+    await SoundManager().initialize();
+    await HapticFeedbackUtil().initialize();
+    await ImageQualityManager().initialize();
+    await AutoSaveService().initialize();
+    // await LanguageService().initialize();
 
     debugPrint('🎉 All services initialized successfully!');
   } catch (e, stackTrace) {

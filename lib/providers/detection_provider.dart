@@ -9,6 +9,7 @@ import '../models/detection_result.dart';
 import '../models/detection_state.dart';
 import '../services/analytics_service.dart';
 import '../services/api_service.dart';
+import '../services/auto_save_service.dart';
 import '../services/cloud_vision_service.dart';
 import '../services/ml_service.dart';
 import '../services/subscription_service.dart';
@@ -26,6 +27,8 @@ class DetectionProvider extends StateNotifier<DetectionState> {
   final CloudVisionService _cloudVisionService = CloudVisionService();
   final AnalyticsService _analyticsService = AnalyticsService();
   final SubscriptionService _subscriptionService = SubscriptionService();
+  // Add auto save service
+  final AutoSaveService _autoSaveService = AutoSaveService();
 
   bool get _isPremium => _ref.read(premiumProvider).isPremium;
 
@@ -81,7 +84,12 @@ class DetectionProvider extends StateNotifier<DetectionState> {
       state = state.copyWith(currentResult: result);
 
       if (objects.isNotEmpty) {
-        await _saveToHistory(result);
+        // Auto-save if enabled
+        final history = await _autoSaveService.autoSaveDetectionResult(result);
+        if (history != null) {
+          // Update history provider
+          await _ref.read(historyProvider.notifier).addFromAutoSave(history);
+        }
       }
 
       // Track analytics (this will now be handled by history provider)
