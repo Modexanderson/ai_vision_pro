@@ -353,40 +353,69 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = state.copyWith(isLoading: true, error: null);
 
     try {
+      // Check if Apple Sign In is available
       final isAvailable = await SignInWithApple.isAvailable();
+      debugPrint('Apple Sign In available: $isAvailable');
+
       if (!isAvailable) {
         state = state.copyWith(
           isLoading: false,
-          error: 'Apple Sign In is not available on this device',
+          error:
+              'Apple Sign In is not available on this device. Please ensure you\'re running iOS 13+ and signed into an Apple ID.',
         );
         return;
       }
+
+      debugPrint('Attempting Apple Sign In...');
 
       final appleCredential = await SignInWithApple.getAppleIDCredential(
         scopes: [
           AppleIDAuthorizationScopes.email,
           AppleIDAuthorizationScopes.fullName,
         ],
+        webAuthenticationOptions: WebAuthenticationOptions(
+          clientId: 'your-service-id', // Add your service ID if you have one
+          redirectUri:
+              Uri.parse('https://your-domain.com/callback'), // Add if needed
+        ),
       );
+
+      debugPrint('Apple credential obtained successfully');
+      debugPrint('User ID: ${appleCredential.userIdentifier}');
+      debugPrint('Email: ${appleCredential.email}');
+      debugPrint('Given Name: ${appleCredential.givenName}');
+      debugPrint('Family Name: ${appleCredential.familyName}');
+
+      if (appleCredential.identityToken == null) {
+        throw Exception('Apple Sign In failed: No identity token received');
+      }
 
       final oAuthCredential = OAuthProvider("apple.com").credential(
         idToken: appleCredential.identityToken,
         accessToken: appleCredential.authorizationCode,
       );
 
+      debugPrint('Creating Firebase credential...');
+
       final UserCredential result =
           await _firebaseAuth.signInWithCredential(oAuthCredential);
 
+      debugPrint('Firebase authentication successful');
+
       if (result.user != null) {
+        // Update display name if available and not already set
         if (appleCredential.givenName != null &&
             result.user!.displayName == null) {
           final displayName =
               '${appleCredential.givenName} ${appleCredential.familyName ?? ''}'
                   .trim();
           await result.user!.updateDisplayName(displayName);
+          debugPrint('Updated display name: $displayName');
         }
 
         final isNewUser = result.additionalUserInfo?.isNewUser ?? false;
+        debugPrint('Is new user: $isNewUser');
+
         await _createOrUpdateUserDocument(result.user!, isNewUser: isNewUser);
         final appUser = AppUser.fromFirebaseUser(result.user!);
         await _cacheUserData(appUser);
@@ -396,13 +425,53 @@ class AuthNotifier extends StateNotifier<AuthState> {
           isAuthenticated: true,
           isLoading: false,
         );
+
+        debugPrint('Apple Sign In completed successfully');
       }
+    } on SignInWithAppleAuthorizationException catch (e) {
+      debugPrint(
+          'Apple Sign In Authorization Exception: ${e.code} - ${e.message}');
+
+      String errorMessage;
+      switch (e.code) {
+        case AuthorizationErrorCode.canceled:
+          errorMessage = 'Sign in was canceled';
+          break;
+        case AuthorizationErrorCode.failed:
+          errorMessage = 'Sign in failed. Please try again';
+          break;
+        case AuthorizationErrorCode.invalidResponse:
+          errorMessage = 'Invalid response from Apple. Please try again';
+          break;
+        case AuthorizationErrorCode.notHandled:
+          errorMessage = 'Sign in not handled. Please try again';
+          break;
+        case AuthorizationErrorCode.notInteractive:
+          errorMessage = 'Sign in requires user interaction';
+          break;
+        case AuthorizationErrorCode.unknown:
+        default:
+          errorMessage =
+              'Apple Sign In failed. Please ensure you\'re signed into your Apple ID in Settings and try again';
+          break;
+      }
+
+      state = state.copyWith(
+        isLoading: false,
+        error: errorMessage,
+      );
+    } on FirebaseAuthException catch (e) {
+      debugPrint('Firebase Auth Exception: ${e.code} - ${e.message}');
+      state = state.copyWith(
+        isLoading: false,
+        error: _getErrorMessage(e.code),
+      );
     } catch (e) {
+      debugPrint('Unexpected error during Apple Sign In: $e');
       state = state.copyWith(
         isLoading: false,
         error: 'Apple sign in failed: ${e.toString()}',
       );
-      debugPrint('Apple sign in failed: ${e.toString()}');
     }
   }
 
