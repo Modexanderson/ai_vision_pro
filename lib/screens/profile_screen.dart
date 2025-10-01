@@ -1498,30 +1498,30 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               ),
             ),
           ] else ...[
-            _buildActionTile(
-              'Privacy Settings',
-              'Manage your data and privacy preferences',
-              Icons.privacy_tip_rounded,
-              AppTheme.warningColor,
-              () {
-                HapticFeedback.lightImpact();
-                _openPrivacySettings();
-              },
-              theme,
-            ),
-            _buildDivider(theme),
-            _buildActionTile(
-              'Export My Data',
-              'Download all your account data',
-              Icons.download_rounded,
-              AppTheme.infoColor,
-              () {
-                HapticFeedback.lightImpact();
-                _exportUserData();
-              },
-              theme,
-            ),
-            _buildDivider(theme),
+            // _buildActionTile(
+            //   'Privacy Settings',
+            //   'Manage your data and privacy preferences',
+            //   Icons.privacy_tip_rounded,
+            //   AppTheme.warningColor,
+            //   () {
+            //     HapticFeedback.lightImpact();
+            //     _openPrivacySettings();
+            //   },
+            //   theme,
+            // ),
+            // _buildDivider(theme),
+            // _buildActionTile(
+            //   'Export My Data',
+            //   'Download all your account data',
+            //   Icons.download_rounded,
+            //   AppTheme.infoColor,
+            //   () {
+            //     HapticFeedback.lightImpact();
+            //     _exportUserData();
+            //   },
+            //   theme,
+            // ),
+            // _buildDivider(theme),
             _buildActionTile(
               'Delete Account',
               'Permanently delete your account and data',

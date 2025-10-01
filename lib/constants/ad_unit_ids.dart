@@ -12,8 +12,9 @@ class AdUnitIds {
   }
 
   // Environment-based configuration
-  static bool get _useTestAds =>
-      _isDebugMode || dotenv.env['ENVIRONMENT'] == 'development';
+  // static bool get _useTestAds =>
+  //     _isDebugMode || dotenv.env['ENVIRONMENT'] == 'development';
+  static bool get _useTestAds => dotenv.env['ENVIRONMENT'] == 'development';
 
   // ============================================================================
   // BANNER AD UNIT IDS
