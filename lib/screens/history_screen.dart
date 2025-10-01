@@ -776,6 +776,46 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen>
     );
   }
 
+  Widget _buildImage(String imagePath, {BoxFit fit = BoxFit.cover}) {
+    // Check if it's a URL or local file path
+    final isUrl =
+        imagePath.startsWith('http://') || imagePath.startsWith('https://');
+
+    if (isUrl) {
+      return Image.network(
+        imagePath,
+        fit: fit,
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return Center(
+            child: CircularProgressIndicator(
+              value: loadingProgress.expectedTotalBytes != null
+                  ? loadingProgress.cumulativeBytesLoaded /
+                      loadingProgress.expectedTotalBytes!
+                  : null,
+            ),
+          );
+        },
+        errorBuilder: (context, error, stackTrace) {
+          return _buildPlaceholderThumbnail(Theme.of(context));
+        },
+      );
+    } else {
+      // Local file path
+      return File(imagePath).existsSync()
+          ? Image.file(
+              File(imagePath),
+              fit: fit,
+              errorBuilder: (context, error, stackTrace) {
+                return _buildPlaceholderThumbnail(Theme.of(context));
+              },
+            )
+          : _buildPlaceholderThumbnail(Theme.of(context));
+    }
+  }
+
+// Then replace _buildImageThumbnail method with this:
+
   Widget _buildImageThumbnail(DetectionHistory item, ThemeData theme) {
     return Container(
       width: 64,
@@ -788,15 +828,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen>
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(11),
-        child: File(item.imagePath).existsSync()
-            ? Image.file(
-                File(item.imagePath),
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) {
-                  return _buildPlaceholderThumbnail(theme);
-                },
-              )
-            : _buildPlaceholderThumbnail(theme),
+        child: _buildImage(item.imagePath),
       ),
     );
   }
@@ -1170,32 +1202,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen>
                         ),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(15),
-                          child: File(item.imagePath).existsSync()
-                              ? Image.file(
-                                  File(item.imagePath),
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) {
-                                    return Container(
-                                      color: theme
-                                          .colorScheme.surfaceContainerHighest,
-                                      child: Icon(
-                                        Icons.image_rounded,
-                                        size: 64,
-                                        color:
-                                            theme.colorScheme.onSurfaceVariant,
-                                      ),
-                                    );
-                                  },
-                                )
-                              : Container(
-                                  color:
-                                      theme.colorScheme.surfaceContainerHighest,
-                                  child: Icon(
-                                    Icons.image_rounded,
-                                    size: 64,
-                                    color: theme.colorScheme.onSurfaceVariant,
-                                  ),
-                                ),
+                          child: _buildImage(item.imagePath),
                         ),
                       ),
 
